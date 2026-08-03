@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aak"
+version = "0.1.0"
+description = "Adoption telemetry for enterprise AI agents"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2",
+    "sqlalchemy",
+    "typer",
+    "plotly",
+    "kaleido",
+    "anthropic",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["aak*"]

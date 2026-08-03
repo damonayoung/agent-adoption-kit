@@ -1,0 +1,1 @@
+"""Core adoption metric calculations."""
