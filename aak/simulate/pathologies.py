@@ -22,6 +22,16 @@ ABILITY_GAP_INVOCATION_MULT = 1.4  # PROPOSED: high volume of attempts
 ABILITY_GAP_SUCCESS_MULT = 0.5  # PROPOSED: low task-success probability
 
 # --- reinforcement_decay ----------------------------------------------------------
+# KNOWN LIMITATION: this pathology decays invocation *frequency* only (activity_prob, via
+# decay_after_day/decay_rate below) — it never modifies turns_mean_mult or success_prob_mult, so
+# session depth and task success stay at baseline whenever a session does occur. It models "was
+# regularly active, then went quiet," not "reached deep/Transform-level workflow usage, then lost
+# that depth." Phase 2's analytics engine reflects this honestly: the usage_regression flag
+# (aak/analytics/staging.py) detects invocation-intensity decline only, and its intervention
+# rule (aak/analytics/interventions.py) deliberately makes no claim about workflow depth having
+# been reached. A true "reached Transform, then lost depth" signature isn't simulated yet — a
+# candidate for a future depth_regression pathology that decays turns_mean_mult/success_prob_mult
+# after a cutoff, analogous to how activity_prob decays here.
 REINFORCEMENT_DECAY_CUTOFF_DAY = 30  # PROPOSED: day after which activity starts decaying
 REINFORCEMENT_DECAY_RATE = 0.08  # PROPOSED: per-day exponential decay constant post-cutoff
 

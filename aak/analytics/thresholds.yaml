@@ -1,0 +1,111 @@
+# NANTE engine thresholds.
+#
+# Every value below is PROPOSED: an illustrative, unvalidated starting point for producing a
+# statistically distinguishable signal, not a calibrated finding from real client telemetry.
+# Per project convention, none of these will ever be calibrated against real client data from
+# this repo. Treat every number here as a hypothesis a real engagement should replace.
+
+observation_window:
+  # PROPOSED — the concept brief's own "what it takes to run" floor: below this many
+  # post-rollout days, the honest answer is "not yet ready to be measured," not a score.
+  min_days_general: 60
+  # PROPOSED — the brief's own aggregate-reliability floor for a cohort.
+  min_cohort_size: 50
+  # PROPOSED — per-metric minimum post-rollout days before that metric is trustworthy.
+  # (Metrics with a fixed offset baked into their name — voluntary_reuse_7d, retention_curve's
+  # 30/60/90 — use that offset directly as a code constant instead; it is the metric's
+  # definition, not a tunable business threshold.)
+  min_days_first_invocation_coverage: 14
+  min_days_habit_depth: 21
+  min_days_session_depth: 14
+  min_days_weekly_intensity: 21
+  min_days_workflow_integration: 30
+  min_days_breadth_depth_divergence: 30
+  min_days_gini_concentration: 21
+  min_days_task_success_trend: 21
+  min_days_escalation_decay: 30
+
+staging:
+  # PROPOSED — distinct weeks with >=1 invocation required to count as "recurring" (Navigate).
+  navigate_min_active_weeks: 3
+  # PROPOSED — distinct weeks required, on top of Navigate's bar, to count as sustained
+  # multi-workflow use (Transform).
+  transform_min_active_weeks: 6
+  # PROPOSED — share of a user's sessions that must be "multi-step" (see
+  # multi_step_turns_threshold below) to count as workflow integration.
+  transform_min_multi_step_share: 0.6
+  # PROPOSED — minimum task success rate required to count as Transform/Embed. This is a
+  # deliberate addition beyond the brief's literal wording: the brief describes Transform as
+  # "sustained use across several workflows," but sustained *failing* use isn't workflow
+  # integration. Without this gate, ability_gap's high-volume/low-success users (frequent,
+  # multi-step, but mostly failing) would misread as "transformed" on multi-step share alone.
+  transform_min_success_rate: 0.55
+  # PROPOSED — fraction of weeks *since a user's first use* that must show activity for
+  # "continuous, withdrawal-would-disrupt-output" Embed status. Recency-weighted on purpose:
+  # historical volume alone shouldn't count if usage has since gone quiet.
+  embed_min_active_week_fraction: 0.8
+  # PROPOSED — turns/session at or above this count as "multi-step" (the honest proxy for
+  # workflow depth, given Event has no task-type field to measure "multi-task-type" directly).
+  multi_step_turns_threshold: 12
+
+stall_detection:
+  # PROPOSED — a stage-boundary graduation rate (fraction of roster reaching the next stage)
+  # at or above this is "healthy." Applies to the Notice->Attempt and Attempt->Navigate
+  # boundaries only; Navigate->Transform and Transform->Embed use the post_navigate_* cutoffs
+  # below instead (see comment there for why).
+  graduation_healthy_min: 0.90
+  # PROPOSED — at or above this (but below healthy_min) is "at_risk"; below this is "failing."
+  # Same Notice/Attempt-only scope as graduation_healthy_min above.
+  graduation_at_risk_min: 0.80
+  # PROPOSED — Navigate->Transform and Transform->Embed both sit beyond the concept brief's own
+  # ~2% "stops four and five" ceiling ("breadth is high, depth is stalled" — across published
+  # enterprise studies, not just injected pathologies). That's a near-universal industry cliff,
+  # not evidence of a cohort-specific problem, so these two boundaries get their own, much more
+  # lenient cutoffs instead of the general graduation_* ones above:
+  #   - post_navigate_healthy_min is set unreachably above 1.0 on purpose: even a best-case
+  #     cohort should read "at_risk" here, never "healthy" — "at_risk" is the honest ceiling.
+  #   - post_navigate_at_risk_min is the floor below which a cohort is doing meaningfully worse
+  #     than that universal ~2-3% baseline, i.e. a genuine "failing" reading.
+  # Per the recalibration decision, "failing" here (or anywhere) no longer falls back to
+  # promoting an "at_risk" boundary to the stall point (see staging.py) — "at_risk" is an
+  # honest status, not itself a diagnosis.
+  post_navigate_healthy_min: 1.01
+  post_navigate_at_risk_min: 0.01
+  # PROPOSED — late-window/early-window invocation-rate ratio below this signals a decline.
+  sliding_back_ratio_max: 0.4
+  # PROPOSED — ignore the decline signal unless the early-window rate was at least this high;
+  # a cohort that was always quiet is a different pathology (never left Notice/Attempt), not a
+  # cohort "sliding back" from something it never reached.
+  sliding_back_early_rate_floor: 0.1
+  # PROPOSED — precondition for the usage_regression flag: per-user invocations/week at or above
+  # this counts as "meaningfully engaged" for the peak-population check below. Deliberately
+  # measured as per-user weekly *intensity*, not literal Transform-stage classification:
+  # reinforcement-decay pathologies only ever suppress invocation frequency (never turns/success),
+  # and the simulator's own depth-growth mechanic ties "deep" sessions to progress through the
+  # whole observation window -- so a cohort whose late-window activity has decayed away can
+  # genuinely never cross the strict Transform stage bar even at its healthiest, making stage
+  # classification unusable as this precondition's signal. Intensity is what the pathology
+  # actually models (see the KNOWN LIMITATION note on reinforcement_decay in
+  # aak/simulate/pathologies.py).
+  sliding_back_min_peak_weekly_rate: 1.0
+  # PROPOSED — fraction of the roster that must have reached that peak weekly intensity (at the
+  # early-window peak, or currently) for the cohort to count as having reached meaningful
+  # adoption in the first place. Below this, a decline in an already-barely-used cohort is a
+  # different pathology (never really adopted), not "sliding back from" something it never had.
+  sliding_back_min_peak_transform_share: 0.1
+  # PROPOSED — breadth_vs_depth_divergence values above this trip the shallow_plateau flag.
+  divergence_flag_threshold: 0.3
+  # PROPOSED — gini_concentration values above this trip the champion_dependency flag.
+  champion_gini_threshold: 0.5
+  # PROPOSED — scales the session-depth (turns) weekly slope into breadth_vs_depth_divergence's
+  # [0, 1] flatness component; a slope at or beyond this magnitude counts as "not flat at all."
+  depth_slope_normalization: 0.15
+
+scoring:
+  # PROPOSED — ordinal stage weights for the 0-100 composite score.
+  stage_weights:
+    notice: 0
+    attempt: 25
+    navigate: 50
+    transform: 75
+    embed: 100

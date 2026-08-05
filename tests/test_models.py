@@ -3,7 +3,7 @@ from datetime import date, datetime
 import pytest
 from pydantic import ValidationError
 
-from aak.models import Cohort, Event, NanteSnapshot, ProvisionedUser, Scorecard
+from aak.models import Cohort, Event, NanteSnapshot, ProvisionedUser, Scorecard, StageRead
 
 
 def test_event_valid_construction():
@@ -80,6 +80,24 @@ def test_provisioned_user_valid_construction():
     assert user.cohort == "cohort-1"
 
 
-def test_nante_snapshot_and_scorecard_stubs_importable():
-    NanteSnapshot()
+def test_nante_snapshot_construction():
+    snapshot = NanteSnapshot(
+        cohort="cohort-1",
+        as_of=date(2025, 4, 1),
+        observation_days=90,
+        stage_distribution=[
+            StageRead(stage="notice", population_fraction=0.1, status="healthy"),
+            StageRead(stage="attempt", population_fraction=0.3, status="at_risk"),
+            StageRead(stage="navigate", population_fraction=0.4, status="healthy"),
+            StageRead(stage="transform", population_fraction=0.15, status="healthy"),
+            StageRead(stage="embed", population_fraction=0.05, status="healthy"),
+        ],
+        stall_point="attempt",
+        nante_score=42.5,
+    )
+    assert snapshot.stall_point == "attempt"
+    assert snapshot.flags == []
+
+
+def test_scorecard_stub_importable():
     Scorecard()

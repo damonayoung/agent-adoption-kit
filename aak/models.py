@@ -52,8 +52,35 @@ class ProvisionedUser(BaseModel):
     provisioned_date: date
 
 
+StageName = Literal["notice", "attempt", "navigate", "transform", "embed"]
+StageStatus = Literal["healthy", "at_risk", "failing"]
+
+
+class StageRead(BaseModel):
+    """One stage's slice of a cohort's population, at a point in time."""
+
+    stage: StageName
+    population_fraction: float = Field(ge=0, le=1)
+    status: StageStatus
+    insufficient_window: bool = False
+
+
 class NanteSnapshot(BaseModel):
-    """Phase 2 stub: a point-in-time native-staging classification. Fields defined in Phase 2."""
+    """A point-in-time native-staging classification for one cohort.
+
+    ``stall_point`` is the deliverable per the NANTE concept brief: a score alone gives
+    leadership nothing to act on, but naming where the population got stuck does.
+    """
+
+    cohort: str
+    as_of: date
+    observation_days: int = Field(ge=0)
+    stage_distribution: list[StageRead]
+    stall_point: Optional[StageName] = None
+    nante_score: Optional[float] = Field(default=None, ge=0, le=100)
+    insufficient_window: bool = False
+    insufficient_sample_size: bool = False
+    flags: list[str] = Field(default_factory=list)
 
 
 class Scorecard(BaseModel):

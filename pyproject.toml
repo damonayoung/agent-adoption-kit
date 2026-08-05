@@ -25,3 +25,6 @@ aak = "aak.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["aak*"]
+
+[tool.setuptools.package-data]
+aak = ["analytics/thresholds.yaml"]
