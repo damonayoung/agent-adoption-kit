@@ -20,5 +20,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 
+[project.scripts]
+aak = "aak.cli:app"
+
 [tool.setuptools.packages.find]
 include = ["aak*"]
