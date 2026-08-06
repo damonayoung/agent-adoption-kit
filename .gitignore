@@ -36,4 +36,4 @@ htmlcov/
 # Project-specific
 .env
 *.db
-report/
+/report/

@@ -27,4 +27,4 @@ aak = "aak.cli:app"
 include = ["aak*"]
 
 [tool.setuptools.package-data]
-aak = ["analytics/thresholds.yaml"]
+aak = ["analytics/thresholds.yaml", "report/assets/fonts/*.woff2"]

@@ -5,12 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+import anthropic
 import typer
 
 from aak.analytics.interventions import InterventionRule, select_interventions
 from aak.analytics.staging import build_snapshot
 from aak.analytics.thresholds import load_thresholds
 from aak.models import NanteSnapshot
+from aak.report.narrative import generate_cohort_commentary
+from aak.report.onepager import render_onepager
 from aak.simulate.population import (
     DEFAULT_DAYS,
     DEFAULT_N_COHORTS,
@@ -119,6 +122,70 @@ def analyze(
         blocks.append(_format_snapshot(snapshot, interventions))
 
     typer.echo("\n\n".join(blocks))
+
+
+def _resolve_single_cohort(roster: list, cohort: Optional[str], db: Path) -> str:
+    """Resolve one cohort name for the report command: the explicit option, or the db's sole cohort."""
+    known_cohorts = sorted({user.cohort for user in roster})
+    if not known_cohorts:
+        typer.echo(f"No provisioned users found in {db}")
+        raise typer.Exit(code=1)
+    if cohort is not None:
+        if cohort not in known_cohorts:
+            typer.echo(f"Cohort {cohort!r} not found in {db}. Known cohorts: {', '.join(known_cohorts)}")
+            raise typer.Exit(code=1)
+        return cohort
+    if len(known_cohorts) > 1:
+        typer.echo(
+            f"{db} has multiple cohorts ({', '.join(known_cohorts)}); pass a --*-cohort option to pick one."
+        )
+        raise typer.Exit(code=1)
+    return known_cohorts[0]
+
+
+@app.command()
+def report(
+    ref_db: Path = typer.Argument(..., help="SQLite file for the reference (healthy) cohort."),
+    observed_db: Path = typer.Argument(..., help="SQLite file for the observed (stalled) cohort."),
+    compare: bool = typer.Option(
+        False, "--compare", help="Comparison mode -- the only mode this phase supports."
+    ),
+    ref_cohort: Optional[str] = typer.Option(
+        None, "--ref-cohort", help="Cohort to use from ref_db; default is its sole cohort."
+    ),
+    observed_cohort: Optional[str] = typer.Option(
+        None, "--observed-cohort", help="Cohort to use from observed_db; default is its sole cohort."
+    ),
+    out: Path = typer.Option(Path("report.html"), "--out", help="HTML file to write the one-pager to."),
+) -> None:
+    """Render the NANTE comparison one-pager for two cohorts.
+
+    Read-only: builds snapshots via aak.analytics, generates commentary via the Anthropic SDK,
+    writes an HTML file -- never writes analytics back to either store.
+    """
+    if not compare:
+        typer.echo("Only --compare is supported in this phase.")
+        raise typer.Exit(code=1)
+
+    thresholds = load_thresholds()
+
+    ref_events = read_events(ref_db)
+    ref_roster = read_provisioned_users(ref_db)
+    ref_cohort_name = _resolve_single_cohort(ref_roster, ref_cohort, ref_db)
+    reference = build_snapshot(ref_events, ref_roster, ref_cohort_name, thresholds)
+
+    observed_events = read_events(observed_db)
+    observed_roster = read_provisioned_users(observed_db)
+    observed_cohort_name = _resolve_single_cohort(observed_roster, observed_cohort, observed_db)
+    observed = build_snapshot(observed_events, observed_roster, observed_cohort_name, thresholds)
+
+    client = anthropic.Anthropic()
+    reference_commentary = generate_cohort_commentary(reference, "reference", client=client)
+    observed_commentary = generate_cohort_commentary(observed, "observed", client=client)
+
+    html = render_onepager(reference, observed, reference_commentary, observed_commentary)
+    out.write_text(html)
+    typer.echo(f"Wrote comparison one-pager -> {out}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 from datetime import date
+from types import SimpleNamespace
 
+import anthropic
 from typer.testing import CliRunner
 
 from aak.cli import _format_snapshot, app
@@ -8,6 +10,16 @@ from aak.simulate.population import generate_population
 from aak.store import init_db, write_events, write_provisioned_users
 
 runner = CliRunner()
+
+
+class _FakeAnthropicMessages:
+    def create(self, **kwargs):
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text="Fake cohort commentary.")])
+
+
+class _FakeAnthropicClient:
+    def __init__(self, *args, **kwargs):
+        self.messages = _FakeAnthropicMessages()
 
 
 def _write_population(db_path, **kwargs):
@@ -100,3 +112,37 @@ def test_format_snapshot_flags_insufficient_window_and_missing_score():
     assert "navigate  :    0.0%  [healthy, insufficient window]" in text
     assert "Flags: none" in text
     assert "Interventions:" not in text
+
+
+def test_report_compare_writes_an_html_one_pager(tmp_path, monkeypatch):
+    monkeypatch.setattr(anthropic, "Anthropic", _FakeAnthropicClient)
+
+    ref_db = tmp_path / "ref.db"
+    observed_db = tmp_path / "observed.db"
+    _write_population(ref_db, n_users=60, n_cohorts=1, days=150, seed=1, pathology="healthy")
+    _write_population(observed_db, n_users=60, n_cohorts=1, days=150, seed=1, pathology="shallow_plateau")
+    out_path = tmp_path / "report.html"
+
+    result = runner.invoke(
+        app,
+        ["report", "--compare", str(ref_db), str(observed_db), "--out", str(out_path)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert out_path.exists()
+    html = out_path.read_text()
+    assert "<html" in html
+    assert "Fake cohort commentary." in html
+
+
+def test_report_without_compare_flag_errors_instead_of_guessing_a_mode(tmp_path, monkeypatch):
+    monkeypatch.setattr(anthropic, "Anthropic", _FakeAnthropicClient)
+
+    ref_db = tmp_path / "ref.db"
+    observed_db = tmp_path / "observed.db"
+    _write_population(ref_db, n_users=60, n_cohorts=1, days=150, seed=1, pathology="healthy")
+    _write_population(observed_db, n_users=60, n_cohorts=1, days=150, seed=1, pathology="shallow_plateau")
+
+    result = runner.invoke(app, ["report", str(ref_db), str(observed_db)])
+
+    assert result.exit_code != 0
