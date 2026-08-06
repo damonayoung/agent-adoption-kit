@@ -40,6 +40,21 @@ def test_brief_cure_table_rules_carry_their_not_this_contrast():
     assert by_trigger["navigate"].not_this == "more licenses"
 
 
+def test_flag_rules_carry_their_not_this_contrast():
+    by_trigger = {rule.trigger: rule for rule in INTERVENTION_RULES}
+    assert by_trigger["usage_regression"].not_this == "assuming they never adopted"
+    assert by_trigger["champion_dependency"].not_this == "celebrating your power users"
+    assert by_trigger["shallow_plateau"].not_this == "more usage of the same shallow interaction"
+
+
+def test_usage_regression_diagnosis_omits_the_internal_depth_caveat():
+    # The Transform-stage-depth caveat belongs in code comments/methods docs, not the
+    # buyer-facing diagnosis -- it reads as self-apology there.
+    diagnosis = next(rule for rule in INTERVENTION_RULES if rule.trigger == "usage_regression").diagnosis
+    assert "Transform" not in diagnosis
+    assert "does not verify" not in diagnosis
+
+
 def test_select_interventions_matches_stall_point_only():
     snapshot = _snapshot(stall_point="navigate")
     selected = select_interventions(snapshot)

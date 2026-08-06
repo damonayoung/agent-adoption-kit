@@ -78,17 +78,26 @@ def test_healthy_reaches_transform_and_embed_for_only_a_minority():
     fractions = {s.stage: s.population_fraction for s in snapshot.stage_distribution}
     transform_and_embed = fractions["transform"] + fractions["embed"]
 
-    # Per the concept brief's own ~2% framing ("breadth is high, depth is stalled"), this is
-    # expected even for an otherwise-healthy population, not just injected pathologies -- so
-    # this asserts "minority", not "majority", rather than requiring zero bottlenecks anywhere.
-    assert 0 < transform_and_embed < 0.15
+    # A deliberate departure from the concept brief's own ~2% "stops four and five" figure
+    # ("breadth is high, depth is stalled") for the *healthy* archetype specifically: the brief's
+    # number describes typical/average enterprise outcomes across published studies, not a ceiling
+    # on what a well-executed rollout can achieve. "healthy" now models the latter -- a genuine
+    # adoption curve where a meaningful minority reaches real depth -- while shallow_plateau (and
+    # the brief's ~2% figure) still represent the stalled/typical case. Still a minority, not a
+    # majority: the simulator's persona mix caps how much of the population can plausibly deepen.
+    assert 0.20 < transform_and_embed < 0.40
+    # "Distributed across Transform and Embed" per the calibration goal, not one stage swallowing
+    # the other (which is what a too-low embed continuity bar produced before recalibration).
+    assert fractions["transform"] > 0.02
+    assert fractions["embed"] > 0.02
     assert fractions["notice"] < 0.05  # a healthy cohort shouldn't have a real Notice problem
 
-    # Recalibration: the Navigate/Transform boundaries' near-universal ~2% ceiling reads
+    # Recalibration: the Navigate/Transform boundaries' near-universal depth-cliff baseline reads
     # "at_risk" at most, never "failing" -- "failing" is reserved for cohorts doing worse than
     # that baseline, not the baseline itself. A healthy cohort should have no failing boundary
     # anywhere, and correspondingly no stall point.
     assert all(stage.status != "failing" for stage in snapshot.stage_distribution)
+    assert snapshot.stall_point is None
     assert snapshot.stall_point is None
 
 

@@ -17,7 +17,12 @@ SIMULATION_START = date(2025, 1, 1)  # fixed synthetic epoch so output is determ
 LATENCY_MS_MIN = 200  # PROPOSED
 LATENCY_MS_MAX = 4000  # PROPOSED
 FAILURE_PARTIAL_SHARE = 0.5  # PROPOSED: split of non-success outcomes between "partial" and "abandoned"
-GROWTH_MAX = 0.8  # PROPOSED: healthy session depth can grow up to +80% of baseline by the end of the window
+GROWTH_MAX = 1.2  # PROPOSED: healthy session depth can grow up to +120% of baseline by the end of
+# the window. Raised from +80%: at +80%, only the "power" persona's lifetime-average depth came
+# anywhere near the Transform-stage bar (aak/analytics/thresholds.yaml's multi_step_turns_threshold),
+# and even then only by a coin flip (its average sat almost exactly on the cutoff). This constant
+# only affects pathologies with turns_growth_over_time=True (the default) -- shallow_plateau sets
+# that False specifically so this change has zero effect on it.
 ESCALATION_TAPER_RATE = 0.6  # PROPOSED: escalation probability can fall by up to 60% as users gain proficiency
 ESCALATION_TAPER_FLOOR = 0.3  # PROPOSED: escalation probability never falls below 30% of its baseline
 
@@ -47,9 +52,18 @@ class Persona:
     escalation_prob: float
 
 
-PERSONAS: dict[str, Persona] = {  # PROPOSED baseline persona mix and rates
-    "power": Persona(0.05, 0.55, 9.0, 3.0, 0.80, 0.12),
-    "regular": Persona(0.35, 0.30, 5.0, 2.0, 0.72, 0.10),
+# PROPOSED baseline persona mix and rates. turns_mean for "power" and "regular" was raised
+# (from 9.0 and 5.0) alongside GROWTH_MAX above so that a healthy population's depth-growth
+# trajectory can genuinely clear the Transform-stage bar for a meaningful minority, not just
+# "power" alone by chance -- "regular" is the plurality persona (35% weight), so without raising
+# it too, "power" (5% weight) is a hard ceiling on how much of the population could ever reach
+# Transform, regardless of any threshold tuning. "occasional" and "light" are deliberately
+# untouched: even at the new growth ceiling their depth (6.6 and 4.4 turns respectively) stays
+# far below the bar, so the bulk of the population still realistically spreads across the
+# earlier stages rather than every persona converging on Transform.
+PERSONAS: dict[str, Persona] = {
+    "power": Persona(0.05, 0.55, 11.0, 3.0, 0.80, 0.12),
+    "regular": Persona(0.35, 0.30, 8.0, 2.0, 0.72, 0.10),
     "occasional": Persona(0.40, 0.12, 3.0, 1.5, 0.65, 0.09),
     "light": Persona(0.20, 0.04, 2.0, 1.0, 0.60, 0.08),
 }

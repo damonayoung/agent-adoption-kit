@@ -42,8 +42,13 @@ staging:
   transform_min_success_rate: 0.55
   # PROPOSED — fraction of weeks *since a user's first use* that must show activity for
   # "continuous, withdrawal-would-disrupt-output" Embed status. Recency-weighted on purpose:
-  # historical volume alone shouldn't count if usage has since gone quiet.
-  embed_min_active_week_fraction: 0.8
+  # historical volume alone shouldn't count if usage has since gone quiet. Raised from 0.8 to
+  # 0.9: at 0.8, ~96% of the users who cleared the Transform bar also cleared this continuity
+  # bar, so nearly everyone landed straight in Embed and Transform stayed a near-empty
+  # pass-through stage. This isn't a reachability change (it doesn't affect who clears Transform
+  # at all) -- it's about where the already-qualifying population lands, giving both Transform
+  # and Embed a meaningful, visible population instead of one swallowing the other.
+  embed_min_active_week_fraction: 0.9
   # PROPOSED — turns/session at or above this count as "multi-step" (the honest proxy for
   # workflow depth, given Event has no task-type field to measure "multi-task-type" directly).
   multi_step_turns_threshold: 12
