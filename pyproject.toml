@@ -15,6 +15,7 @@ dependencies = [
     "kaleido",
     "anthropic",
     "pyyaml",
+    "cairosvg",
 ]
 
 [project.optional-dependencies]

@@ -13,6 +13,7 @@ aak/report/assets/fonts/ (~72KB raw, ~96KB base64) for exactly this reason.
 from __future__ import annotations
 
 import base64
+from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
 
@@ -32,6 +33,53 @@ HAIRLINE = "#29292E"
 # chart (a barrier the population hit), not a measurement, so it gets its own hue -- a warm
 # amber/hazard tone that reads as "obstacle" and can't be mistaken for the crimson bars behind it.
 WALL = "#F0A93A"
+
+
+# --- Themes -----------------------------------------------------------------
+# A Theme is the full set of color roles charts.py and onepager.py draw with. The values above
+# are the locked PolyWise dark brand; PAPER is a light, print-suitable second set with the SAME
+# semantic roles (teal=healthy, crimson=stalled, amber=the wall) at darker values chosen for
+# contrast on white. Colors live here, in one place, so neither charts.py nor onepager.py ever
+# branches on theme inline -- they read `theme.<role>` and are otherwise theme-agnostic.
+@dataclass(frozen=True)
+class Theme:
+    bg: str
+    text: str
+    muted: str
+    crimson: str
+    teal: str
+    surface: str
+    hairline: str
+    wall: str
+    # The hazard-stripe gap color painted over the amber wall. On dark it's the page bg (so the
+    # stripes read as amber/near-black); on paper it's dark ink over amber, so the wall still
+    # reads as a hazard barrier when the figure is printed in grayscale.
+    wall_stripe: str
+
+
+POLYWISE = Theme(
+    bg=BG,
+    text=TEXT,
+    muted=MUTED,
+    crimson=CRIMSON,
+    teal=TEAL,
+    surface=SURFACE,
+    hairline=HAIRLINE,
+    wall=WALL,
+    wall_stripe=BG,
+)
+
+PAPER = Theme(
+    bg="#FFFFFF",
+    text="#111114",
+    muted="#5B5B63",
+    crimson="#C21740",  # darker crimson -- the pale brand crimson washes out on white
+    teal="#0E7C5A",  # darker teal -- the brand teal is too light to read against white
+    surface="#F4F4F2",  # faint gray so verdict cards read as cards on a white ground
+    hairline="#D8D8D5",
+    wall="#B26B08",  # darker amber, still unmistakably "hazard" on white
+    wall_stripe="#111114",  # dark ink over amber -> the wall survives grayscale printing
+)
 
 # --- Typefaces (locked) ------------------------------------------------------
 DISPLAY_FONT = "Playfair Display"

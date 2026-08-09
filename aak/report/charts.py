@@ -75,16 +75,17 @@ def _panel_svg(
     role_label: str,
     bar_color: str,
     panel_left: float,
+    theme: tokens.Theme,
 ) -> str:
     parts: list[str] = []
 
     parts.append(
         f'<text x="{panel_left}" y="30" font-family="{tokens.BODY_FONT}" font-weight="700" '
-        f'font-size="15" letter-spacing="0.06em" fill="{tokens.TEXT}">{_esc(role_label)}</text>'
+        f'font-size="15" letter-spacing="0.06em" fill="{theme.text}">{_esc(role_label)}</text>'
     )
     parts.append(
         f'<text x="{panel_left}" y="48" font-family="{tokens.BODY_FONT}" font-weight="400" '
-        f'font-size="12" fill="{tokens.MUTED}">{_esc(snapshot.cohort)}</text>'
+        f'font-size="12" fill="{theme.muted}">{_esc(snapshot.cohort)}</text>'
     )
 
     by_stage = {s.stage: s for s in snapshot.stage_distribution}
@@ -123,29 +124,29 @@ def _panel_svg(
             parts.append(
                 f'<defs><pattern id="{pattern_id}" width="8" height="8" patternUnits="userSpaceOnUse" '
                 f'patternTransform="rotate(45)">'
-                f'<rect width="8" height="8" fill="{tokens.WALL}" />'
-                f'<rect width="4" height="8" fill="{tokens.BG}" opacity="0.5" />'
+                f'<rect width="8" height="8" fill="{theme.wall}" />'
+                f'<rect width="4" height="8" fill="{theme.wall_stripe}" opacity="0.5" />'
                 f"</pattern></defs>"
             )
             parts.append(
                 f'<rect x="{wall_x0}" y="{wall_y0}" width="{wall_w}" height="{wall_h}" '
-                f'fill="url(#{pattern_id})" stroke="{tokens.WALL}" stroke-width="1.5" />'
+                f'fill="url(#{pattern_id})" stroke="{theme.wall}" stroke-width="1.5" />'
             )
             parts.append(
                 f'<text x="{wall_x0 + wall_w / 2}" y="{wall_y0 - 8}" font-family="{tokens.BODY_FONT}" '
                 f'font-weight="700" font-size="10" letter-spacing="0.08em" text-anchor="middle" '
-                f'fill="{tokens.WALL}">WALL</text>'
+                f'fill="{theme.wall}">WALL</text>'
             )
         else:
             x = _boundary_x(panel_left, boundary_index)
             parts.append(
                 f'<line x1="{x}" y1="{_AXIS_TOP}" x2="{x}" y2="{_AXIS_BOTTOM}" '
-                f'stroke="{tokens.HAIRLINE}" stroke-width="1" />'
+                f'stroke="{theme.hairline}" stroke-width="1" />'
             )
 
     parts.append(
         f'<line x1="{panel_left}" y1="{_AXIS_BOTTOM}" x2="{panel_left + _PANEL_W}" y2="{_AXIS_BOTTOM}" '
-        f'stroke="{tokens.HAIRLINE}" stroke-width="1" />'
+        f'stroke="{theme.hairline}" stroke-width="1" />'
     )
 
     for i, stage in enumerate(_STAGE_ORDER):
@@ -165,33 +166,37 @@ def _panel_svg(
         if stage_read.insufficient_window:
             parts.append(
                 f'<text x="{label_x}" y="{y - 8}" font-family="{tokens.BODY_FONT}" '
-                f'font-weight="400" font-size="9" text-anchor="middle" fill="{tokens.MUTED}" '
+                f'font-weight="400" font-size="9" text-anchor="middle" fill="{theme.muted}" '
                 f'font-style="italic">insufficient window</text>'
             )
         else:
             parts.append(
                 f'<text x="{label_x}" y="{y - 8}" font-family="{tokens.BODY_FONT}" '
-                f'font-weight="600" font-size="12" text-anchor="middle" fill="{tokens.TEXT}" '
+                f'font-weight="600" font-size="12" text-anchor="middle" fill="{theme.text}" '
                 f'font-variant-numeric="tabular-nums">{fraction * 100:.1f}%</text>'
             )
 
         parts.append(
             f'<text x="{label_x}" y="{_AXIS_BOTTOM + 22}" font-family="{tokens.BODY_FONT}" '
             f'font-weight="600" font-size="11" letter-spacing="0.04em" text-anchor="middle" '
-            f'fill="{tokens.MUTED}">{_STAGE_LABELS[stage].upper()}</text>'
+            f'fill="{theme.muted}">{_STAGE_LABELS[stage].upper()}</text>'
         )
 
     depth_label_x = depth_zone_x0 + depth_zone_w / 2
     parts.append(
         f'<text x="{depth_label_x}" y="{_AXIS_BOTTOM + 46}" font-family="{tokens.BODY_FONT}" '
         f'font-weight="400" font-size="11" font-style="italic" text-anchor="middle" '
-        f'fill="{tokens.MUTED}">{_esc(_depth_annotation(by_stage))}</text>'
+        f'fill="{theme.muted}">{_esc(_depth_annotation(by_stage))}</text>'
     )
 
     return "\n".join(parts)
 
 
-def render_comparison_chart(reference: NanteSnapshot, observed: NanteSnapshot) -> str:
+def render_comparison_chart(
+    reference: NanteSnapshot,
+    observed: NanteSnapshot,
+    theme: tokens.Theme = tokens.POLYWISE,
+) -> str:
     """Render the hero: two five-stage bar panels on one shared, aligned stage axis.
 
     ``reference`` is always drawn teal and labeled "Reference (healthy)"; ``observed`` is always
@@ -200,11 +205,15 @@ def render_comparison_chart(reference: NanteSnapshot, observed: NanteSnapshot) -
     "wall" emphasis, though, is genuinely data-driven: it renders at whichever stage boundary
     each snapshot's own ``stall_point`` names, so a snapshot stalled at Attempt would show its
     wall there, not hardcoded to Navigate.
+
+    ``theme`` defaults to the locked dark PolyWise palette; passing ``tokens.PAPER`` swaps in the
+    light, print-suitable palette with the same semantic roles. The default is byte-for-byte the
+    prior output.
     """
     body = "\n".join(
         [
-            _panel_svg(reference, "Reference (healthy)", tokens.TEAL, _PANEL_LEFT["reference"]),
-            _panel_svg(observed, "Observed (stalled)", tokens.CRIMSON, _PANEL_LEFT["observed"]),
+            _panel_svg(reference, "Reference (healthy)", theme.teal, _PANEL_LEFT["reference"], theme),
+            _panel_svg(observed, "Observed (stalled)", theme.crimson, _PANEL_LEFT["observed"], theme),
         ]
     )
     return (

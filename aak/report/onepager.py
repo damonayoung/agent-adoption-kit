@@ -9,6 +9,7 @@ here is hand-waved except the locked copy explicitly called out below.
 from __future__ import annotations
 
 from html import escape
+from typing import Optional
 
 from aak.analytics.interventions import InterventionRule, select_interventions
 from aak.models import NanteSnapshot
@@ -83,16 +84,16 @@ def _commentary_block(role_label: str, commentary: str) -> str:
     </div>"""
 
 
-def _styles() -> str:
+def _styles(theme: tokens.Theme = tokens.POLYWISE) -> str:
     return f"""
     :root {{
-      --bg: {tokens.BG};
-      --text: {tokens.TEXT};
-      --muted: {tokens.MUTED};
-      --crimson: {tokens.CRIMSON};
-      --teal: {tokens.TEAL};
-      --surface: {tokens.SURFACE};
-      --hairline: {tokens.HAIRLINE};
+      --bg: {theme.bg};
+      --text: {theme.text};
+      --muted: {theme.muted};
+      --crimson: {theme.crimson};
+      --teal: {theme.teal};
+      --surface: {theme.surface};
+      --hairline: {theme.hairline};
     }}
     {tokens.font_face_css()}
     * {{ box-sizing: border-box; }}
@@ -203,18 +204,36 @@ def _styles() -> str:
 def render_onepager(
     reference: NanteSnapshot,
     observed: NanteSnapshot,
-    reference_commentary: str,
-    observed_commentary: str,
+    reference_commentary: Optional[str] = None,
+    observed_commentary: Optional[str] = None,
+    theme: tokens.Theme = tokens.POLYWISE,
 ) -> str:
-    """Assemble the full comparison one-pager as a self-contained HTML string."""
-    chart_svg = render_comparison_chart(reference, observed)
+    """Assemble the full comparison one-pager as a self-contained HTML string.
+
+    ``theme`` selects the palette (default: locked dark PolyWise; ``tokens.PAPER`` for the light,
+    print-suitable variant). When both commentaries are ``None`` the Claude-generated commentary
+    block is omitted entirely — the paper theme calls it this way so the figure is deterministic
+    and never touches the Anthropic client. With both commentaries supplied and the default theme,
+    the output is byte-for-byte identical to the prior version.
+    """
+    chart_svg = render_comparison_chart(reference, observed, theme)
+
+    if reference_commentary is not None and observed_commentary is not None:
+        commentary_section = (
+            '  <div class="commentary-row">\n'
+            f'    {_commentary_block("Reference (healthy)", reference_commentary)}\n'
+            f'    {_commentary_block("Observed (stalled)", observed_commentary)}\n'
+            "  </div>\n\n"
+        )
+    else:
+        commentary_section = ""
 
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <title>NANTE Adoption Comparison</title>
-<style>{_styles()}</style>
+<style>{_styles(theme)}</style>
 </head>
 <body>
 <div class="page">
@@ -230,12 +249,7 @@ def render_onepager(
 
   {_so_what_section(observed)}
 
-  <div class="commentary-row">
-    {_commentary_block("Reference (healthy)", reference_commentary)}
-    {_commentary_block("Observed (stalled)", observed_commentary)}
-  </div>
-
-  <div class="footer">
+{commentary_section}  <div class="footer">
     <span>{escape(HONESTY_LABEL)}</span>
     <span>{escape(FOOTER_BRAND)}</span>
   </div>

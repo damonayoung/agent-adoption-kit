@@ -12,6 +12,8 @@ from aak.analytics.interventions import InterventionRule, select_interventions
 from aak.analytics.staging import build_snapshot
 from aak.analytics.thresholds import load_thresholds
 from aak.models import NanteSnapshot
+from aak.report import tokens
+from aak.report.figure import build_paper_figure_svg, export_figure
 from aak.report.narrative import generate_cohort_commentary
 from aak.report.onepager import render_onepager
 from aak.simulate.population import (
@@ -157,14 +159,32 @@ def report(
         None, "--observed-cohort", help="Cohort to use from observed_db; default is its sole cohort."
     ),
     out: Path = typer.Option(Path("report.html"), "--out", help="HTML file to write the one-pager to."),
+    theme: str = typer.Option(
+        "polywise", "--theme", help="Report theme: 'polywise' (dark brand, default) or 'paper' (light, print)."
+    ),
+    export_figure_path: Optional[Path] = typer.Option(
+        None,
+        "--export-figure",
+        help="Also emit a print-ready figure (.svg/.pdf/.png). Valid only with --theme=paper.",
+    ),
 ) -> None:
     """Render the NANTE comparison one-pager for two cohorts.
 
-    Read-only: builds snapshots via aak.analytics, generates commentary via the Anthropic SDK,
-    writes an HTML file -- never writes analytics back to either store.
+    Read-only: builds snapshots via aak.analytics and writes an HTML file -- never writes analytics
+    back to either store. The default 'polywise' theme generates cohort commentary via the Anthropic
+    SDK; the 'paper' theme omits commentary entirely and never constructs an Anthropic client, so
+    ``--theme=paper`` (and the optional ``--export-figure``) is deterministic and needs no API key.
     """
     if not compare:
         typer.echo("Only --compare is supported in this phase.")
+        raise typer.Exit(code=1)
+
+    if theme not in ("polywise", "paper"):
+        typer.echo("--theme must be 'polywise' or 'paper'.")
+        raise typer.Exit(code=1)
+
+    if export_figure_path is not None and theme != "paper":
+        typer.echo("--export-figure is only valid with --theme=paper.")
         raise typer.Exit(code=1)
 
     thresholds = load_thresholds()
@@ -178,6 +198,18 @@ def report(
     observed_roster = read_provisioned_users(observed_db)
     observed_cohort_name = _resolve_single_cohort(observed_roster, observed_cohort, observed_db)
     observed = build_snapshot(observed_events, observed_roster, observed_cohort_name, thresholds)
+
+    if theme == "paper":
+        # Deterministic path: no Anthropic client, no commentary. The paper's figure must render
+        # identically on every run, with no API key and no network.
+        html = render_onepager(reference, observed, theme=tokens.PAPER)
+        out.write_text(html)
+        typer.echo(f"Wrote comparison one-pager (paper theme) -> {out}")
+        if export_figure_path is not None:
+            svg = build_paper_figure_svg(reference, observed)
+            export_figure(svg, export_figure_path)
+            typer.echo(f"Exported figure -> {export_figure_path}")
+        return
 
     client = anthropic.Anthropic()
     reference_commentary = generate_cohort_commentary(reference, "reference", client=client)
