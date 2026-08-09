@@ -48,6 +48,20 @@ def init_db(path: PathLike) -> None:
     engine.dispose()
 
 
+def truncate_db(path: PathLike) -> None:
+    """Ensure the events/provisioned_users tables exist at ``path``, then empty them.
+
+    Used by ``aak simulate``'s truncate-by-default behavior: safe to call whether ``path``
+    already exists (with old data) or not.
+    """
+    init_db(path)
+    engine = _engine(path)
+    with engine.begin() as conn:
+        conn.execute(events_table.delete())
+        conn.execute(provisioned_users_table.delete())
+    engine.dispose()
+
+
 def write_events(path: PathLike, events: list[Event]) -> None:
     """Bulk-insert ``events`` into the database at ``path``."""
     if not events:

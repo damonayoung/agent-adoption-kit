@@ -65,6 +65,21 @@ class StageRead(BaseModel):
     insufficient_window: bool = False
 
 
+class TransformGateBreakdown(BaseModel):
+    """Among a cohort's navigate-classified users (those who failed Transform's bar), how many
+    were even tenure-eligible for a real qualitative read, and what fraction of that eligible
+    pool failed each individual Transform sub-gate.
+
+    Not mutually exclusive -- a user can fail both the multi-step-share gate and the
+    success-rate gate at once, so the two fractions need not sum to 1.
+    """
+
+    evaluated_users: int = Field(ge=0)
+    insufficient_weeks_users: int = Field(ge=0)
+    multi_step_share_failing_fraction: Optional[float] = Field(default=None, ge=0, le=1)
+    success_rate_failing_fraction: Optional[float] = Field(default=None, ge=0, le=1)
+
+
 class NanteSnapshot(BaseModel):
     """A point-in-time native-staging classification for one cohort.
 
@@ -81,6 +96,7 @@ class NanteSnapshot(BaseModel):
     insufficient_window: bool = False
     insufficient_sample_size: bool = False
     flags: list[str] = Field(default_factory=list)
+    transform_gate_breakdown: Optional[TransformGateBreakdown] = None
 
 
 class Scorecard(BaseModel):

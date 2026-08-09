@@ -85,6 +85,15 @@ INTERVENTION_RULES: list[InterventionRule] = [
         "integration, not just more usage of the same shallow interaction.",
         not_this="more usage of the same shallow interaction",
     ),
+    InterventionRule(
+        trigger="low_task_success",
+        label="Skill gap at Navigate",
+        diagnosis="Users are attempting real, multi-step work but failing at it — the stall is "
+        "ability, not workflow fit.",
+        prescription="Skill-building and enablement: targeted training, worked examples, and "
+        "coaching on the specific tasks where success rate is low.",
+        not_this="not workflow redesign",
+    ),
 ]
 
 

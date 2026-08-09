@@ -343,16 +343,33 @@ def test_cost_per_active_user_always_degrades_gracefully():
 
 
 def test_gini_concentration_known_answer():
+    # u1: 4 invocations, u2: 1 invocation, u3/u4: provisioned but zero-activity.
     roster = [_user(f"u{i}") for i in range(1, 5)]  # u1..u4
-    events = [_invocation("u1", 1, f"u1:{i}") for i in range(4)]  # all 4 invocations go to u1
+    events = [_invocation("u1", 1, f"u1:{i}") for i in range(4)] + [_invocation("u2", 1, "u2:0")]
     as_of = ROLLOUT + timedelta(days=10)
 
     result = metrics.gini_concentration(events, roster, "c1", window=7, as_of=as_of)
 
-    # counts = [4, 0, 0, 0]; Gini = 2*sum((i+1)*sorted_v)/(n*total) - (n+1)/n
-    # sorted = [0,0,0,4]; cumulative = 4*4 = 16; gini = 32/16 - 5/4 = 2.0 - 1.25 = 0.75
-    assert result.value == pytest.approx(0.75)
+    # Active-only counts = [4, 1] (u3/u4 excluded -- they never invoked).
+    # sorted = [1, 4]; cumulative = 1*1 + 2*4 = 9; total = 5, n = 2
+    # gini = 2*9/(2*5) - 3/2 = 1.8 - 1.5 = 0.3
+    # (the old roster-inclusive behavior would have counted u3/u4 as zeros -- counts
+    # [4,1,0,0] -- giving 0.65 instead; this known-answer value is the semantic change.)
+    assert result.value == pytest.approx(0.3)
     assert result.insufficient_window is False
+
+
+def test_gini_concentration_excludes_zero_activity_users():
+    # A large, evenly-active majority plus many zero-activity provisioned users: if zero-activity
+    # users were still counted, this would read as heavily concentrated; excluding them, activity
+    # is perfectly even (gini == 0).
+    roster = [_user(f"a{i}") for i in range(10)] + [_user(f"z{i}") for i in range(20)]
+    events = [_invocation(f"a{i}", 1, f"a{i}:0") for i in range(10)]
+    as_of = ROLLOUT + timedelta(days=10)
+
+    result = metrics.gini_concentration(events, roster, "c1", window=7, as_of=as_of)
+
+    assert result.value == pytest.approx(0.0)
 
 
 def test_gini_concentration_insufficient_window():

@@ -28,6 +28,15 @@ def test_awareness_gap_stalls_at_notice():
     assert snapshot.stall_point == "notice"
 
 
+def test_awareness_gap_does_not_flag_champion_dependency():
+    # awareness_gap's ~1/3 zero-activity provisioned users used to mechanically inflate a
+    # roster-wide Gini past the champion_dependency threshold, even though the pathology isn't
+    # designed to concentrate usage. gini_concentration now measures concentration among active
+    # users only, so this no longer fires.
+    snapshot, _ = _snapshot("awareness_gap")
+    assert "champion_dependency" not in snapshot.flags
+
+
 def test_shallow_plateau_stalls_at_navigate_with_divergence_flag():
     snapshot, _ = _snapshot("shallow_plateau")
     assert snapshot.stall_point == "navigate"
@@ -71,6 +80,27 @@ def test_reinforcement_decay_flags_usage_regression():
 def test_champion_dependency_flags_high_gini():
     snapshot, _ = _snapshot("champion_dependency")
     assert "champion_dependency" in snapshot.flags
+
+
+def test_ability_gap_flags_low_task_success():
+    # ability_gap's navigate-stuck population clears the multi-step-share gate at a much higher
+    # rate than every other pathology's (a meaningful share of them attempt real multi-step
+    # work), but still fails the success-rate gate almost universally -- the stall is ability,
+    # not depth or workflow fit.
+    snapshot, _ = _snapshot("ability_gap")
+    assert "low_task_success" in snapshot.flags
+
+
+def test_shallow_plateau_does_not_flag_low_task_success():
+    # shallow_plateau's navigate-stuck population fails almost entirely on the multi-step-share
+    # gate (depth alone explains the stall); success rate is fine. Not a skill gap.
+    snapshot, _ = _snapshot("shallow_plateau")
+    assert "low_task_success" not in snapshot.flags
+
+
+def test_healthy_does_not_flag_low_task_success():
+    snapshot, _ = _snapshot("healthy")
+    assert "low_task_success" not in snapshot.flags
 
 
 def test_healthy_reaches_transform_and_embed_for_only_a_minority():

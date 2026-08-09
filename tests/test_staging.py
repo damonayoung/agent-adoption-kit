@@ -3,7 +3,13 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from aak.analytics.staging import _classify_user, _detect_sliding_back, build_snapshot
+from aak.analytics.staging import (
+    _classify_user,
+    _detect_sliding_back,
+    _transform_gate_breakdown,
+    _transform_gate_status,
+    build_snapshot,
+)
 from aak.analytics.thresholds import (
     ObservationWindowThresholds,
     ScoringThresholds,
@@ -73,6 +79,9 @@ def _test_thresholds() -> Thresholds:
             post_navigate_at_risk_min=0.01,
             sliding_back_min_peak_weekly_rate=1.0,
             sliding_back_min_peak_transform_share=0.1,
+            low_task_success_min_evaluated=2,
+            low_task_success_success_failing_min=0.75,
+            low_task_success_multi_step_failing_max=0.9,
         ),
         scoring=ScoringThresholds(
             stage_weights={"notice": 0, "attempt": 25, "navigate": 50, "transform": 75, "embed": 100}
@@ -114,6 +123,58 @@ def test_classify_user_known_answer(user_id, expected_stage):
     events_by_user = _build_events_by_user()
     stage = _classify_user(user_id, events_by_user, ROLLOUT, AS_OF, thresholds)
     assert stage == expected_stage
+
+
+@pytest.mark.parametrize(
+    "user_id, enough_weeks, meets_multi_step, meets_success_rate",
+    [
+        ("a1", False, False, False),  # 1 active week, turns=1 (not multi-step), no outcomes
+        ("v1", False, False, False),  # 2 active weeks (< transform's 4-week bar)
+        ("t1", True, True, True),  # 4 active weeks, turns=6 (multi-step), all success
+        ("e1", True, True, True),  # 10 active weeks, turns=6 (multi-step), all success
+    ],
+)
+def test_transform_gate_status_known_answer(user_id, enough_weeks, meets_multi_step, meets_success_rate):
+    thresholds = _test_thresholds()
+    events_by_user = _build_events_by_user()
+    status = _transform_gate_status(user_id, events_by_user, ROLLOUT, thresholds)
+    assert status.enough_weeks is enough_weeks
+    assert status.meets_multi_step is meets_multi_step
+    assert status.meets_success_rate is meets_success_rate
+
+
+def test_transform_gate_breakdown_returns_none_for_no_navigate_users():
+    thresholds = _test_thresholds()
+    assert _transform_gate_breakdown([], {}, ROLLOUT, thresholds) is None
+
+
+def test_transform_gate_breakdown_known_answer():
+    thresholds = _test_thresholds()  # transform_min_active_weeks=4, multi_step_turns_threshold=5,
+    # transform_min_multi_step_share=0.5, transform_min_success_rate=0.5
+
+    events_by_user: dict[str, list[Event]] = defaultdict(list)
+    for d in (2, 9, 16, 23):  # 4 distinct active weeks -- enough_weeks True for all four below
+        # fails success only: multi-step turns, but every outcome fails
+        events_by_user["fail_success"].append(_inv("fail_success", d, f"fs:{d}", turns=6))
+        events_by_user["fail_success"].append(_outc("fail_success", d, f"fs:{d}", "abandoned", turns=6))
+        # fails multi-step only: shallow turns, but every outcome succeeds
+        events_by_user["fail_multistep"].append(_inv("fail_multistep", d, f"fm:{d}", turns=1))
+        events_by_user["fail_multistep"].append(_outc("fail_multistep", d, f"fm:{d}", "success", turns=1))
+        # fails both
+        events_by_user["fail_both"].append(_inv("fail_both", d, f"fb:{d}", turns=1))
+        events_by_user["fail_both"].append(_outc("fail_both", d, f"fb:{d}", "abandoned", turns=1))
+    for d in (2, 9):  # only 2 distinct active weeks -- insufficient tenure to be evaluated at all
+        events_by_user["insufficient_weeks"].append(_inv("insufficient_weeks", d, f"iw:{d}"))
+
+    navigate_user_ids = ["fail_success", "fail_multistep", "fail_both", "insufficient_weeks"]
+    breakdown = _transform_gate_breakdown(navigate_user_ids, events_by_user, ROLLOUT, thresholds)
+
+    assert breakdown.evaluated_users == 3
+    assert breakdown.insufficient_weeks_users == 1
+    # fail_success and fail_both fail the success gate: 2/3
+    assert breakdown.success_rate_failing_fraction == pytest.approx(2 / 3)
+    # fail_multistep and fail_both fail the multi-step gate: 2/3
+    assert breakdown.multi_step_share_failing_fraction == pytest.approx(2 / 3)
 
 
 def test_build_snapshot_stage_distribution_and_stall_point():
@@ -176,6 +237,9 @@ def test_post_navigate_at_risk_boundary_does_not_become_the_stall_point():
             post_navigate_at_risk_min=0.01,
             sliding_back_min_peak_weekly_rate=1.0,
             sliding_back_min_peak_transform_share=0.1,
+            low_task_success_min_evaluated=2,
+            low_task_success_success_failing_min=0.75,
+            low_task_success_multi_step_failing_max=0.9,
         ),
         scoring=ScoringThresholds(
             stage_weights={"notice": 0, "attempt": 25, "navigate": 50, "transform": 75, "embed": 100}
@@ -257,3 +321,45 @@ def test_build_snapshot_insufficient_window_gate():
 
     assert snapshot.insufficient_window is True
     assert snapshot.nante_score is None
+
+
+def _navigate_stuck_population(fails: str) -> tuple[list[ProvisionedUser], list[Event]]:
+    """10 users, all classified navigate (4 active weeks -- enough tenure to be evaluated on
+    Transform's qualitative gates, but every one of them fails at least one of those gates).
+    ``fails`` selects which single gate every user fails -- mirrors the ability_gap shape
+    (fails=success) vs the shallow_plateau shape (fails=multi_step)."""
+    turns = 1 if fails == "multi_step" else 6  # multi_step_turns_threshold is 5 in _test_thresholds()
+    outcome = "abandoned" if fails == "success" else "success"
+
+    roster = [_user(f"u{i}") for i in range(10)]
+    events: list[Event] = []
+    for i in range(10):
+        for d in (2, 9, 16, 23):
+            events.append(_inv(f"u{i}", d, f"u{i}:{d}", turns=turns))
+            events.append(_outc(f"u{i}", d, f"u{i}:{d}", outcome, turns=turns))
+    return roster, events
+
+
+def test_low_task_success_flag_fires_when_success_dominates_the_navigate_stall():
+    thresholds = _test_thresholds()
+    roster, events = _navigate_stuck_population(fails="success")
+
+    snapshot = build_snapshot(events, roster, "c1", thresholds, as_of=AS_OF)
+
+    assert snapshot.stall_point == "navigate"
+    assert "low_task_success" in snapshot.flags
+    assert snapshot.transform_gate_breakdown.evaluated_users == 10
+    assert snapshot.transform_gate_breakdown.success_rate_failing_fraction == pytest.approx(1.0)
+    assert snapshot.transform_gate_breakdown.multi_step_share_failing_fraction == pytest.approx(0.0)
+
+
+def test_low_task_success_flag_does_not_fire_when_multi_step_dominates_the_navigate_stall():
+    thresholds = _test_thresholds()
+    roster, events = _navigate_stuck_population(fails="multi_step")
+
+    snapshot = build_snapshot(events, roster, "c1", thresholds, as_of=AS_OF)
+
+    assert snapshot.stall_point == "navigate"
+    assert "low_task_success" not in snapshot.flags
+    assert snapshot.transform_gate_breakdown.success_rate_failing_fraction == pytest.approx(0.0)
+    assert snapshot.transform_gate_breakdown.multi_step_share_failing_fraction == pytest.approx(1.0)

@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 from aak.cli import _format_snapshot, app
 from aak.models import NanteSnapshot, StageRead
 from aak.simulate.population import generate_population
-from aak.store import init_db, write_events, write_provisioned_users
+from aak.store import init_db, read_events, read_provisioned_users, write_events, write_provisioned_users
 
 runner = CliRunner()
 
@@ -39,7 +39,10 @@ def test_analyze_reports_known_pathology(tmp_path):
     assert result.exit_code == 0
     assert "=== cohort-1 ===" in result.stdout
     assert "stall_point: notice" in result.stdout
-    assert "champion_dependency" in result.stdout
+    # awareness_gap's ~1/3 zero-activity users mechanically inflate a roster-wide Gini, but
+    # gini_concentration now measures concentration among active users only -- this pathology
+    # isn't designed to produce champion concentration, and no longer misreads as one.
+    assert "champion_dependency" not in result.stdout
     assert "Never left Notice" in result.stdout
     assert "not this: training" in result.stdout
 
@@ -87,6 +90,42 @@ def test_simulate_then_analyze_compose_end_to_end(tmp_path):
     analyze_result = runner.invoke(app, ["analyze", str(db_path)])
     assert analyze_result.exit_code == 0
     assert analyze_result.stdout.strip() != ""
+
+
+def test_simulate_truncates_by_default(tmp_path):
+    db_path = tmp_path / "repeat.db"
+    args = ["simulate", "--pathology", "healthy", "--users", "50", "--seed", "7", "--out", str(db_path)]
+
+    first = runner.invoke(app, args)
+    assert first.exit_code == 0
+    roster_after_first = len(read_provisioned_users(db_path))
+    events_after_first = len(read_events(db_path))
+
+    second = runner.invoke(app, args)
+    assert second.exit_code == 0
+
+    # Re-running with the same --out and no --append must not double the population: it starts
+    # from empty every time, so results are identical to a single run, not additive.
+    assert len(read_provisioned_users(db_path)) == roster_after_first
+    assert len(read_events(db_path)) == events_after_first
+
+
+def test_simulate_append_preserves_existing_data(tmp_path):
+    db_path = tmp_path / "composed.db"
+    args = ["simulate", "--pathology", "healthy", "--users", "50", "--seed", "7", "--out", str(db_path)]
+
+    first = runner.invoke(app, args)
+    assert first.exit_code == 0
+    roster_after_first = len(read_provisioned_users(db_path))
+    events_after_first = len(read_events(db_path))
+
+    second = runner.invoke(app, [*args, "--append"])
+    assert second.exit_code == 0
+
+    # --append composes multiple pathologies/cohorts into one db: existing rows are preserved,
+    # and the new run's rows are added on top.
+    assert len(read_provisioned_users(db_path)) == roster_after_first * 2
+    assert len(read_events(db_path)) == events_after_first * 2
 
 
 def test_format_snapshot_flags_insufficient_window_and_missing_score():

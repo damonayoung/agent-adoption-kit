@@ -21,7 +21,7 @@ def _snapshot(stall_point=None, flags=None) -> NanteSnapshot:
     )
 
 
-def test_intervention_rules_cover_the_briefs_cure_table_plus_the_two_additions():
+def test_intervention_rules_cover_the_briefs_cure_table_plus_the_three_additions():
     triggers = {rule.trigger for rule in INTERVENTION_RULES}
     assert triggers == {
         "notice",
@@ -30,6 +30,7 @@ def test_intervention_rules_cover_the_briefs_cure_table_plus_the_two_additions()
         "usage_regression",
         "champion_dependency",
         "shallow_plateau",
+        "low_task_success",
     }
 
 
@@ -45,6 +46,7 @@ def test_flag_rules_carry_their_not_this_contrast():
     assert by_trigger["usage_regression"].not_this == "assuming they never adopted"
     assert by_trigger["champion_dependency"].not_this == "celebrating your power users"
     assert by_trigger["shallow_plateau"].not_this == "more usage of the same shallow interaction"
+    assert by_trigger["low_task_success"].not_this == "not workflow redesign"
 
 
 def test_usage_regression_diagnosis_omits_the_internal_depth_caveat():

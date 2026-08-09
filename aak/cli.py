@@ -22,7 +22,14 @@ from aak.simulate.population import (
     DEFAULT_N_USERS,
     generate_population,
 )
-from aak.store import init_db, read_events, read_provisioned_users, write_events, write_provisioned_users
+from aak.store import (
+    init_db,
+    read_events,
+    read_provisioned_users,
+    truncate_db,
+    write_events,
+    write_provisioned_users,
+)
 
 app = typer.Typer(help="agent-adoption-kit command line interface.")
 
@@ -42,12 +49,27 @@ def simulate(
     ),
     seed: Optional[int] = typer.Option(None, help="Random seed for deterministic output."),
     out: Path = typer.Option(Path("demo.db"), "--out", help="SQLite file to write events to."),
+    append: bool = typer.Option(
+        False,
+        "--append",
+        help="Append to an existing database instead of starting from empty (for composing "
+        "multiple pathologies/cohorts into one db). Default is to start from empty: any "
+        "existing content at --out is discarded first.",
+    ),
 ) -> None:
-    """Generate a synthetic population and write its events and roster to a SQLite database."""
+    """Generate a synthetic population and write its events and roster to a SQLite database.
+
+    Starts from an empty database by default -- any existing content at ``--out`` is discarded
+    first, so re-running this command with the same ``--out`` is always safe and reproducible.
+    Pass ``--append`` to add this pathology's population on top of what's already there instead.
+    """
     result = generate_population(
         n_users=users, n_cohorts=cohorts, days=days, seed=seed, pathology=pathology
     )
-    init_db(out)
+    if append:
+        init_db(out)  # ensure tables exist; preserve existing rows
+    else:
+        truncate_db(out)  # start from empty regardless of whether `out` pre-existed
     write_events(out, result.events)
     write_provisioned_users(out, result.roster)
     typer.echo(

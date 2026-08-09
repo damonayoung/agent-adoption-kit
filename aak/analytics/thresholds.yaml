@@ -105,6 +105,27 @@ stall_detection:
   # PROPOSED — scales the session-depth (turns) weekly slope into breadth_vs_depth_divergence's
   # [0, 1] flatness component; a slope at or beyond this magnitude counts as "not flat at all."
   depth_slope_normalization: 0.15
+  # PROPOSED — low_task_success distinguishes "stalled because sessions never go deep enough"
+  # (shallow_plateau) from "stalled because deep attempts keep failing" (ability_gap), among a
+  # cohort's navigate-classified (Transform-bar-failing), tenure-eligible users. Calibrated
+  # against seed-42 data on both the CLI-default population (500 users/3 cohorts) and
+  # tests/test_nante_pathologies.py's population (300 users/1 cohort):
+  #   fraction failing the success-rate gate:   ability_gap ~98%   vs everyone else ~12-22%
+  #   fraction failing the multi-step-share gate: ability_gap ~66-71% vs everyone else ~99.5-100%
+  # ability_gap is the only pathology where a meaningful share of the evaluated pool clears the
+  # multi-step bar and still fails on success alone -- everywhere else, shallow depth alone
+  # already accounts for ~all of the navigate-stuck population, so success-rate failure there is
+  # just noise riding on top of a multi-step-share failure that would have stalled them anyway.
+  #
+  # Floor on the number of navigate-stuck, tenure-eligible users a cohort must have before this
+  # flag is allowed to fire at all; below this, the two fractions above get too noisy to trust
+  # (e.g. champion_dependency's navigate pool is only 3-4 users under seed 42).
+  low_task_success_min_evaluated: 20
+  # At or above this fraction of the evaluated pool failing Transform's success-rate gate.
+  low_task_success_success_failing_min: 0.75
+  # At or below this fraction of the evaluated pool failing Transform's multi-step-share gate --
+  # i.e. shallow depth must NOT already fully explain the stall on its own.
+  low_task_success_multi_step_failing_max: 0.90
 
 scoring:
   # PROPOSED — ordinal stage weights for the 0-100 composite score.

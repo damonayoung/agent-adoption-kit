@@ -565,7 +565,13 @@ def gini_concentration(
     window: int,
     as_of: Optional[date] = None,
 ) -> MetricResult:
-    """Gini coefficient of invocations per provisioned user — a champion-dependency signal."""
+    """Gini coefficient of invocations among users who invoked at least once -- concentration
+    among active users, not the full provisioned roster. A cohort with many never-active users
+    will not, on that basis alone, read as champion-concentrated: non-arrival is a distinct
+    pathology (see aak.analytics.staging's stall_point == "notice") from a small set of active
+    users dominating invocation volume, and this metric is a champion-dependency signal, not a
+    non-arrival one.
+    """
     cohort_events, cohort_roster = _filter_cohort(events, roster, cohort)
     if not cohort_roster:
         return _no_roster(window)
@@ -576,7 +582,7 @@ def gini_concentration(
     if observed < window:
         return _insufficient(observed, window)
 
-    counts = {u.user_id: 0 for u in cohort_roster}
+    counts: dict[str, int] = defaultdict(int)
     for e in cohort_events:
         if e.event_type == "invocation":
             counts[e.user_id] += 1

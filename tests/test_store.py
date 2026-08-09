@@ -5,6 +5,7 @@ from aak.store import (
     init_db,
     read_events,
     read_provisioned_users,
+    truncate_db,
     write_events,
     write_provisioned_users,
 )
@@ -129,3 +130,24 @@ def test_provisioned_users_reveal_zero_event_users(tmp_path):
     zero_event_users = roster_ids - event_ids
 
     assert zero_event_users == {"user-0003"}
+
+
+def test_truncate_db_empties_existing_data(tmp_path):
+    db_path = tmp_path / "combined.db"
+    init_db(db_path)
+    write_events(db_path, _sample_events())
+    write_provisioned_users(db_path, _sample_roster())
+
+    truncate_db(db_path)
+
+    assert read_events(db_path) == []
+    assert read_provisioned_users(db_path) == []
+
+
+def test_truncate_db_on_nonexistent_path_creates_empty_tables(tmp_path):
+    db_path = tmp_path / "never-initialized.db"
+
+    truncate_db(db_path)
+
+    assert read_events(db_path) == []
+    assert read_provisioned_users(db_path) == []

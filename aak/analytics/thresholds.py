@@ -56,6 +56,9 @@ class StallDetectionThresholds:
     post_navigate_at_risk_min: float
     sliding_back_min_peak_weekly_rate: float
     sliding_back_min_peak_transform_share: float
+    low_task_success_min_evaluated: int
+    low_task_success_success_failing_min: float
+    low_task_success_multi_step_failing_max: float
 
 
 @dataclass(frozen=True)

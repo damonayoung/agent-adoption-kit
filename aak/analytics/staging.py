@@ -12,13 +12,22 @@ from __future__ import annotations
 import math
 import statistics
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Optional
 
 from aak.analytics import metrics
 from aak.analytics.metrics import _resolve_as_of
 from aak.analytics.thresholds import Thresholds
-from aak.models import Event, NanteSnapshot, ProvisionedUser, StageName, StageRead, StageStatus
+from aak.models import (
+    Event,
+    NanteSnapshot,
+    ProvisionedUser,
+    StageName,
+    StageRead,
+    StageStatus,
+    TransformGateBreakdown,
+)
 
 _STAGE_ORDER: list[StageName] = ["notice", "attempt", "navigate", "transform", "embed"]
 # Each boundary is named after the stage it leaves — "notice" is the Notice->Attempt boundary,
@@ -44,21 +53,34 @@ def _stage_min_days(thresholds: Thresholds) -> dict[StageName, int]:
     }
 
 
-def _classify_user(
+@dataclass(frozen=True)
+class _TransformGateStatus:
+    """Per-user pass/fail against each of Transform's three independent sub-gates.
+
+    Shared by :func:`_classify_user` (which ANDs all three into a single meets_transform
+    decision) and :func:`_transform_gate_breakdown` (which needs to know WHICH sub-gate is
+    failing for the cohort's low_task_success diagnosis, not just whether the AND as a whole
+    failed).
+    """
+
+    enough_weeks: bool
+    meets_multi_step: bool
+    meets_success_rate: bool
+
+    @property
+    def meets_transform(self) -> bool:
+        return self.enough_weeks and self.meets_multi_step and self.meets_success_rate
+
+
+def _transform_gate_status(
     user_id: str,
     events_by_user: dict[str, list[Event]],
     rollout: date,
-    as_of: date,
     thresholds: Thresholds,
-) -> StageName:
+) -> _TransformGateStatus:
     user_events = events_by_user.get(user_id, [])
     invocation_dates = sorted(e.ts.date() for e in user_events if e.event_type == "invocation")
-    if not invocation_dates:
-        return "notice"
-
     weeks_since_rollout = {(d - rollout).days // 7 for d in invocation_dates}
-    if len(weeks_since_rollout) < thresholds.staging.navigate_min_active_weeks:
-        return "attempt"
 
     turns_by_session: dict[str, int] = defaultdict(int)
     outcomes: list[bool] = []
@@ -75,17 +97,69 @@ def _classify_user(
     )
     success_rate = statistics.fmean(outcomes) if outcomes else 0.0
 
-    meets_transform = (
-        len(weeks_since_rollout) >= thresholds.staging.transform_min_active_weeks
-        and multi_step_share >= thresholds.staging.transform_min_multi_step_share
+    return _TransformGateStatus(
+        enough_weeks=len(weeks_since_rollout) >= thresholds.staging.transform_min_active_weeks,
+        meets_multi_step=multi_step_share >= thresholds.staging.transform_min_multi_step_share,
         # Deliberate addition beyond the brief's literal wording ("sustained use across several
         # workflows; new task patterns appear"): sustained but mostly-*failing* use isn't
         # workflow integration. Without this gate, a high-volume/low-success user — exactly what
         # the ability_gap pathology simulates — would misread as "transformed" purely on
         # activity and multi-step depth, even though most of their attempts don't succeed.
-        and success_rate >= thresholds.staging.transform_min_success_rate
+        meets_success_rate=success_rate >= thresholds.staging.transform_min_success_rate,
     )
-    if not meets_transform:
+
+
+def _transform_gate_breakdown(
+    navigate_user_ids: list[str],
+    events_by_user: dict[str, list[Event]],
+    rollout: date,
+    thresholds: Thresholds,
+) -> Optional[TransformGateBreakdown]:
+    """Among a cohort's navigate-classified users, how many were tenure-eligible for a real
+    qualitative read, and what fraction of that eligible pool failed each Transform sub-gate.
+
+    Returns ``None`` when there are no navigate-classified users at all -- nothing to report.
+    """
+    if not navigate_user_ids:
+        return None
+
+    evaluated = insufficient_weeks = fail_multi_step = fail_success = 0
+    for user_id in navigate_user_ids:
+        status = _transform_gate_status(user_id, events_by_user, rollout, thresholds)
+        if not status.enough_weeks:
+            insufficient_weeks += 1
+            continue
+        evaluated += 1
+        if not status.meets_multi_step:
+            fail_multi_step += 1
+        if not status.meets_success_rate:
+            fail_success += 1
+
+    return TransformGateBreakdown(
+        evaluated_users=evaluated,
+        insufficient_weeks_users=insufficient_weeks,
+        multi_step_share_failing_fraction=(fail_multi_step / evaluated) if evaluated else None,
+        success_rate_failing_fraction=(fail_success / evaluated) if evaluated else None,
+    )
+
+
+def _classify_user(
+    user_id: str,
+    events_by_user: dict[str, list[Event]],
+    rollout: date,
+    as_of: date,
+    thresholds: Thresholds,
+) -> StageName:
+    user_events = events_by_user.get(user_id, [])
+    invocation_dates = sorted(e.ts.date() for e in user_events if e.event_type == "invocation")
+    if not invocation_dates:
+        return "notice"
+
+    weeks_since_rollout = {(d - rollout).days // 7 for d in invocation_dates}
+    if len(weeks_since_rollout) < thresholds.staging.navigate_min_active_weeks:
+        return "attempt"
+
+    if not _transform_gate_status(user_id, events_by_user, rollout, thresholds).meets_transform:
         return "navigate"
 
     first_use = invocation_dates[0]
@@ -234,9 +308,12 @@ def build_snapshot(
         events_by_user[e.user_id].append(e)
 
     stage_counts: dict[StageName, int] = {stage: 0 for stage in _STAGE_ORDER}
+    navigate_user_ids: list[str] = []
     for user in cohort_roster:
         stage = _classify_user(user.user_id, events_by_user, rollout, resolved_as_of, thresholds)
         stage_counts[stage] += 1
+        if stage == "navigate":
+            navigate_user_ids.append(user.user_id)
 
     roster_size = len(cohort_roster)
     stage_fractions = {stage: count / roster_size for stage, count in stage_counts.items()}
@@ -299,6 +376,20 @@ def build_snapshot(
     if _detect_sliding_back(cohort_roster, events_by_user, cohort_events, rollout, resolved_as_of, thresholds):
         flags.append("usage_regression")
 
+    gate_breakdown = _transform_gate_breakdown(navigate_user_ids, events_by_user, rollout, thresholds)
+    if (
+        stall_point == "navigate"
+        and gate_breakdown is not None
+        and gate_breakdown.evaluated_users >= thresholds.stall_detection.low_task_success_min_evaluated
+        and gate_breakdown.success_rate_failing_fraction is not None
+        and gate_breakdown.success_rate_failing_fraction
+        >= thresholds.stall_detection.low_task_success_success_failing_min
+        and gate_breakdown.multi_step_share_failing_fraction is not None
+        and gate_breakdown.multi_step_share_failing_fraction
+        <= thresholds.stall_detection.low_task_success_multi_step_failing_max
+    ):
+        flags.append("low_task_success")
+
     insufficient_window = observed_days < thresholds.observation_window.min_days_general
     nante_score: Optional[float] = None
     if not insufficient_window:
@@ -317,4 +408,5 @@ def build_snapshot(
         insufficient_window=insufficient_window,
         insufficient_sample_size=insufficient_sample_size,
         flags=flags,
+        transform_gate_breakdown=gate_breakdown,
     )
