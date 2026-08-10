@@ -198,3 +198,13 @@ def test_cli_rejects_unknown_theme():
     result = CliRunner().invoke(app, ["report", "a.db", "b.db", "--compare", "--theme", "neon"])
     assert result.exit_code != 0
     assert "must be 'polywise' or 'paper'" in result.output
+
+
+def test_paper_chart_labels_panels_by_role_not_duplicate_cohort_id():
+    # In paper theme both cohorts share the id "cohort-1"; printing it under both panels reads as a
+    # mistake, so paper labels panels by DB role instead. Polywise keeps the cohort id unchanged.
+    paper = render_comparison_chart(_reference(), _observed(), tokens.PAPER)
+    assert paper.count("cohort-1") == 0
+    assert "reference run" in paper and "observed run" in paper
+    poly = render_comparison_chart(_reference(), _observed())
+    assert poly.count("cohort-1") == 2

@@ -76,6 +76,7 @@ def _panel_svg(
     bar_color: str,
     panel_left: float,
     theme: tokens.Theme,
+    subtitle: str,
 ) -> str:
     parts: list[str] = []
 
@@ -85,7 +86,7 @@ def _panel_svg(
     )
     parts.append(
         f'<text x="{panel_left}" y="48" font-family="{tokens.BODY_FONT}" font-weight="400" '
-        f'font-size="12" fill="{theme.muted}">{_esc(snapshot.cohort)}</text>'
+        f'font-size="12" fill="{theme.muted}">{_esc(subtitle)}</text>'
     )
 
     by_stage = {s.stage: s for s in snapshot.stage_distribution}
@@ -210,10 +211,17 @@ def render_comparison_chart(
     light, print-suitable palette with the same semantic roles. The default is byte-for-byte the
     prior output.
     """
+    # Panel subtitles: in paper theme the two cohort ids are identical ("cohort-1"/"cohort-1"),
+    # which reads as a mistake in print, so paper labels the panels by their DB role instead. The
+    # dark PolyWise theme keeps the cohort id, so its output stays byte-for-byte the prior version.
+    if theme is tokens.PAPER:
+        ref_subtitle, obs_subtitle = "reference run", "observed run"
+    else:
+        ref_subtitle, obs_subtitle = reference.cohort, observed.cohort
     body = "\n".join(
         [
-            _panel_svg(reference, "Reference (healthy)", theme.teal, _PANEL_LEFT["reference"], theme),
-            _panel_svg(observed, "Observed (stalled)", theme.crimson, _PANEL_LEFT["observed"], theme),
+            _panel_svg(reference, "Reference (healthy)", theme.teal, _PANEL_LEFT["reference"], theme, ref_subtitle),
+            _panel_svg(observed, "Observed (stalled)", theme.crimson, _PANEL_LEFT["observed"], theme, obs_subtitle),
         ]
     )
     return (
