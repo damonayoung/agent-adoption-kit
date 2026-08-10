@@ -589,3 +589,32 @@ def gini_concentration(
 
     value = _gini(list(counts.values()))
     return MetricResult(value=value, insufficient_window=False, observed_days=observed, required_days=window)
+
+
+def cohort_task_success_rate(
+    events: list[Event],
+    roster: list[ProvisionedUser],
+    cohort_id: str,
+) -> Optional[float]:
+    """Fraction of the cohort's outcome-labeled task events (``task_outcome`` events) whose
+    outcome was "success".
+
+    Event-weighted: every labeled task event counts once, regardless of which user produced it
+    or how many tasks that user attempted. This is NOT a per-user average (a handful of
+    high-volume users can dominate the rate) and it is a distinct quantity from
+    aak.analytics.staging's Transform-stage gate (``transform_min_success_rate``, PROPOSED at
+    0.55): that gate is evaluated per user, against that individual user's own outcomes, as one
+    of three independent conditions a user must clear to classify past Navigate. This function
+    reports a single cohort-level aggregate with no per-user or per-stage gating at all.
+
+    ``roster`` is accepted for signature consistency with the rest of this module but doesn't
+    affect the result: ``task_outcome`` events already carry their own ``cohort`` field. There is
+    also no observation-window minimum here, unlike the ``MetricResult``-returning metrics above.
+
+    Returns ``None`` when the cohort has no outcome-labeled events at all.
+    """
+    cohort_events, _ = _filter_cohort(events, roster, cohort_id)
+    outcomes = [e.outcome == "success" for e in cohort_events if e.event_type == "task_outcome"]
+    if not outcomes:
+        return None
+    return statistics.fmean(outcomes)

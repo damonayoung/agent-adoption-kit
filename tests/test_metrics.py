@@ -4,6 +4,7 @@ import pytest
 
 from aak.analytics import metrics
 from aak.models import Event, ProvisionedUser
+from aak.simulate.population import generate_population
 
 ROLLOUT = date(2025, 1, 1)
 
@@ -402,3 +403,67 @@ def test_generic_insufficient_window_path(metric_fn):
     assert result.value is None
     assert result.observed_days == 2
     assert result.required_days == 1000
+
+
+# ---------------------------------------------------------------------------
+# cohort_task_success_rate
+# ---------------------------------------------------------------------------
+
+_PATHOLOGY_SEED = 42
+_PATHOLOGY_N_USERS = 500
+_PATHOLOGY_N_COHORTS = 3
+_PATHOLOGY_DAYS = 150
+
+
+def _pathology_result(pathology: str):
+    return generate_population(
+        n_users=_PATHOLOGY_N_USERS,
+        n_cohorts=_PATHOLOGY_N_COHORTS,
+        days=_PATHOLOGY_DAYS,
+        seed=_PATHOLOGY_SEED,
+        pathology=pathology,
+    )
+
+
+def test_cohort_task_success_rate_known_answer_ability_gap():
+    # ability_gap's ABILITY_GAP_SUCCESS_MULT=0.5 directly halves task success probability --
+    # this is the diagnostic's own reference figure (~34.5%).
+    result = _pathology_result("ability_gap")
+    rate = metrics.cohort_task_success_rate(result.events, result.roster, "cohort-1")
+    assert rate == pytest.approx(0.345, abs=0.01)
+
+
+def test_cohort_task_success_rate_known_answer_shallow_plateau():
+    # shallow_plateau perturbs invocation rate and session depth, never success_prob_mult --
+    # the diagnostic's own reference figure (~69.6%).
+    result = _pathology_result("shallow_plateau")
+    rate = metrics.cohort_task_success_rate(result.events, result.roster, "cohort-1")
+    assert rate == pytest.approx(0.696, abs=0.01)
+
+
+def test_cohort_task_success_rate_healthy_close_to_shallow_plateau_both_above_ability_gap():
+    # healthy and shallow_plateau both leave success_prob_mult at its default (1.0) -- neither
+    # pathology perturbs per-task success probability, so their aggregate rates are expected to
+    # be close (not one systematically above the other; the gap between them is sampling noise).
+    # ability_gap is the only pathology that actually depresses success probability, so it sits
+    # far below both, by a wide and robust margin.
+    healthy = _pathology_result("healthy")
+    shallow = _pathology_result("shallow_plateau")
+    ability = _pathology_result("ability_gap")
+
+    healthy_rate = metrics.cohort_task_success_rate(healthy.events, healthy.roster, "cohort-1")
+    shallow_rate = metrics.cohort_task_success_rate(shallow.events, shallow.roster, "cohort-1")
+    ability_rate = metrics.cohort_task_success_rate(ability.events, ability.roster, "cohort-1")
+
+    assert abs(healthy_rate - shallow_rate) < 0.05
+    assert healthy_rate > ability_rate + 0.2
+    assert shallow_rate > ability_rate + 0.2
+
+
+def test_cohort_task_success_rate_none_when_no_outcome_labels():
+    roster = [_user("u1")]
+    events = [_invocation("u1", 1, "s1")]  # invocation only, no task_outcome events at all
+
+    rate = metrics.cohort_task_success_rate(events, roster, "c1")
+
+    assert rate is None
