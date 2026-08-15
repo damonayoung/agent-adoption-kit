@@ -37,3 +37,5 @@ htmlcov/
 .env
 *.db
 /report/
+.DS_Store
+out/
