@@ -1,8 +1,10 @@
 # agent-adoption-kit
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21943955.svg)](https://doi.org/10.5281/zenodo.21943955)
+
 Adoption telemetry for enterprise AI agents — measure where your population is stuck, entirely inside your own environment.
 
-Companion code for the paper *Adoption Telemetry: Measuring Enterprise AI Adoption from Production Signals* (arXiv: TBD — add ID after posting).
+Companion code for the paper *Adoption Telemetry: Measuring Enterprise AI Adoption from Production Signals* — DOI: 10.5281/zenodo.21943955 (https://doi.org/10.5281/zenodo.21943955). arXiv version forthcoming.
 
 ## What this is
 
