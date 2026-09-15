@@ -117,15 +117,26 @@ stall_detection:
   # already accounts for ~all of the navigate-stuck population, so success-rate failure there is
   # just noise riding on top of a multi-step-share failure that would have stalled them anyway.
   #
-  # Floor on the number of navigate-stuck, tenure-eligible users a cohort must have before this
-  # flag is allowed to fire at all; below this, the two fractions above get too noisy to trust
-  # (e.g. champion_dependency's navigate pool is only 3-4 users under seed 42).
+  # Floor on the number of navigate-stuck, tenure-eligible users WITH task-outcome data a cohort
+  # must have before this flag is allowed to fire at all; below this, the success-rate fraction
+  # gets too noisy to trust (e.g. champion_dependency's navigate pool is only 3-4 users under
+  # seed 42). Applied to the outcome-covered subset, since that is the fraction's denominator.
   low_task_success_min_evaluated: 20
-  # At or above this fraction of the evaluated pool failing Transform's success-rate gate.
+  # At or above this fraction of the OUTCOME-COVERED evaluated pool (users with at least one
+  # task_outcome event) failing Transform's success-rate gate. Users with no outcome events are
+  # unmeasured, not failing, and sit outside both numerator and denominator.
   low_task_success_success_failing_min: 0.75
   # At or below this fraction of the evaluated pool failing Transform's multi-step-share gate --
   # i.e. shallow depth must NOT already fully explain the stall on its own.
   low_task_success_multi_step_failing_max: 0.90
+  # PROPOSED — minimum share of the evaluated (navigate-stuck, tenure-eligible) pool that must
+  # have any task-outcome data before low_task_success may fire. Below this, the success-rate
+  # failing fraction rests on too small a share of the pool to justify a diagnosis: a source
+  # that emits outcomes for only a sliver of users -- or none at all -- would otherwise let that
+  # sliver speak for the whole stalled population. Every simulated pathology emits outcomes for
+  # everyone (coverage 1.0), so this floor never binds on seed-42 data; it exists for real
+  # sources whose telemetry lacks outcomes.
+  low_task_success_min_outcome_coverage: 0.5
 
 scoring:
   # PROPOSED — ordinal stage weights for the 0-100 composite score.

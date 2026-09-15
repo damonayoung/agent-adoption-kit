@@ -55,21 +55,28 @@ def _stage_min_days(thresholds: Thresholds) -> dict[StageName, int]:
 
 @dataclass(frozen=True)
 class _TransformGateStatus:
-    """Per-user pass/fail against each of Transform's three independent sub-gates.
+    """Per-user status against each of Transform's three independent sub-gates.
+
+    ``enough_weeks`` and ``meets_multi_step`` are plain pass/fail. ``meets_success_rate`` is
+    three-valued: ``True``/``False`` when the user has task_outcome events to judge, ``None``
+    when they have none at all -- an unmeasured user, not a failing one. Absence of outcome
+    evidence must stay distinguishable from evidence of failure, or a source that emits no
+    task outcomes reads as a population that keeps failing.
 
     Shared by :func:`_classify_user` (which ANDs all three into a single meets_transform
-    decision) and :func:`_transform_gate_breakdown` (which needs to know WHICH sub-gate is
-    failing for the cohort's low_task_success diagnosis, not just whether the AND as a whole
-    failed).
+    decision -- and Transform requires ``meets_success_rate is True``, so an unmeasured user is
+    never promoted on depth alone) and :func:`_transform_gate_breakdown` (which needs to know
+    WHICH sub-gate is failing, and which users could not be measured at all, for the cohort's
+    low_task_success diagnosis, not just whether the AND as a whole failed).
     """
 
     enough_weeks: bool
     meets_multi_step: bool
-    meets_success_rate: bool
+    meets_success_rate: Optional[bool]
 
     @property
     def meets_transform(self) -> bool:
-        return self.enough_weeks and self.meets_multi_step and self.meets_success_rate
+        return self.enough_weeks and self.meets_multi_step and self.meets_success_rate is True
 
 
 def _transform_gate_status(
@@ -95,17 +102,22 @@ def _transform_gate_status(
         if turns_by_session
         else 0.0
     )
-    success_rate = statistics.fmean(outcomes) if outcomes else 0.0
+    # Deliberate addition beyond the brief's literal wording ("sustained use across several
+    # workflows; new task patterns appear"): sustained but mostly-*failing* use isn't
+    # workflow integration. Without this gate, a high-volume/low-success user — exactly what
+    # the ability_gap pathology simulates — would misread as "transformed" purely on
+    # activity and multi-step depth, even though most of their attempts don't succeed.
+    # A user with no task_outcome events at all gets None rather than False: no evidence is not
+    # evidence of failure, and scoring it as 0% success would count every unmeasured user as
+    # failing in a source that simply never emits outcomes.
+    meets_success_rate: Optional[bool] = None
+    if outcomes:
+        meets_success_rate = statistics.fmean(outcomes) >= thresholds.staging.transform_min_success_rate
 
     return _TransformGateStatus(
         enough_weeks=len(weeks_since_rollout) >= thresholds.staging.transform_min_active_weeks,
         meets_multi_step=multi_step_share >= thresholds.staging.transform_min_multi_step_share,
-        # Deliberate addition beyond the brief's literal wording ("sustained use across several
-        # workflows; new task patterns appear"): sustained but mostly-*failing* use isn't
-        # workflow integration. Without this gate, a high-volume/low-success user — exactly what
-        # the ability_gap pathology simulates — would misread as "transformed" purely on
-        # activity and multi-step depth, even though most of their attempts don't succeed.
-        meets_success_rate=success_rate >= thresholds.staging.transform_min_success_rate,
+        meets_success_rate=meets_success_rate,
     )
 
 
@@ -118,12 +130,19 @@ def _transform_gate_breakdown(
     """Among a cohort's navigate-classified users, how many were tenure-eligible for a real
     qualitative read, and what fraction of that eligible pool failed each Transform sub-gate.
 
+    The two failing fractions have different denominators. multi_step_share_failing_fraction is
+    over the whole tenure-eligible pool (every evaluated user has sessions to measure depth on).
+    success_rate_failing_fraction is over the outcome-covered subset only -- the evaluated users
+    who have any task_outcome events -- because a user with none is unmeasured, not failing.
+    outcome_covered_users / outcome_coverage report how large that subset is, so a reader can
+    see how much of the pool the success-rate read actually rests on.
+
     Returns ``None`` when there are no navigate-classified users at all -- nothing to report.
     """
     if not navigate_user_ids:
         return None
 
-    evaluated = insufficient_weeks = fail_multi_step = fail_success = 0
+    evaluated = insufficient_weeks = fail_multi_step = outcome_covered = fail_success = 0
     for user_id in navigate_user_ids:
         status = _transform_gate_status(user_id, events_by_user, rollout, thresholds)
         if not status.enough_weeks:
@@ -132,14 +151,19 @@ def _transform_gate_breakdown(
         evaluated += 1
         if not status.meets_multi_step:
             fail_multi_step += 1
+        if status.meets_success_rate is None:
+            continue  # no outcome data: unmeasured, so neither covered nor failing
+        outcome_covered += 1
         if not status.meets_success_rate:
             fail_success += 1
 
     return TransformGateBreakdown(
         evaluated_users=evaluated,
         insufficient_weeks_users=insufficient_weeks,
+        outcome_covered_users=outcome_covered,
+        outcome_coverage=(outcome_covered / evaluated) if evaluated else None,
         multi_step_share_failing_fraction=(fail_multi_step / evaluated) if evaluated else None,
-        success_rate_failing_fraction=(fail_success / evaluated) if evaluated else None,
+        success_rate_failing_fraction=(fail_success / outcome_covered) if outcome_covered else None,
     )
 
 
@@ -376,11 +400,18 @@ def build_snapshot(
     if _detect_sliding_back(cohort_roster, events_by_user, cohort_events, rollout, resolved_as_of, thresholds):
         flags.append("usage_regression")
 
+    # low_task_success reads success_rate_failing_fraction, whose denominator is the
+    # outcome-covered subset of the evaluated pool -- so both the size floor and the coverage
+    # floor apply to that subset, not to evaluated_users. Without the coverage floor, a source
+    # that emits few or no task outcomes would let a handful of measured users (or none, via a
+    # None fraction that is simply skipped) stand in for the whole navigate-stuck population.
     gate_breakdown = _transform_gate_breakdown(navigate_user_ids, events_by_user, rollout, thresholds)
     if (
         stall_point == "navigate"
         and gate_breakdown is not None
-        and gate_breakdown.evaluated_users >= thresholds.stall_detection.low_task_success_min_evaluated
+        and gate_breakdown.outcome_covered_users >= thresholds.stall_detection.low_task_success_min_evaluated
+        and gate_breakdown.outcome_coverage is not None
+        and gate_breakdown.outcome_coverage >= thresholds.stall_detection.low_task_success_min_outcome_coverage
         and gate_breakdown.success_rate_failing_fraction is not None
         and gate_breakdown.success_rate_failing_fraction
         >= thresholds.stall_detection.low_task_success_success_failing_min
