@@ -207,13 +207,13 @@ def render_comparison_chart(
     each snapshot's own ``stall_point`` names, so a snapshot stalled at Attempt would show its
     wall there, not hardcoded to Navigate.
 
-    ``theme`` defaults to the locked dark PolyWise palette; passing ``tokens.PAPER`` swaps in the
+    ``theme`` defaults to the locked dark Polywise palette; passing ``tokens.PAPER`` swaps in the
     light, print-suitable palette with the same semantic roles. The default is byte-for-byte the
     prior output.
     """
     # Panel subtitles: in paper theme the two cohort ids are identical ("cohort-1"/"cohort-1"),
     # which reads as a mistake in print, so paper labels the panels by their DB role instead. The
-    # dark PolyWise theme keeps the cohort id, so its output stays byte-for-byte the prior version.
+    # dark Polywise theme keeps the cohort id, so its output stays byte-for-byte the prior version.
     if theme is tokens.PAPER:
         ref_subtitle, obs_subtitle = "reference run", "observed run"
     else:
