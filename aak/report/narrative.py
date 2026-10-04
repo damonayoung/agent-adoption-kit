@@ -38,6 +38,29 @@ def _flags_display(snapshot: NanteSnapshot) -> str:
     return ", ".join(snapshot.flags) if snapshot.flags else "none"
 
 
+def _outcome_coverage_line(snapshot: NanteSnapshot) -> str:
+    """An extra prompt bullet when the success-rate read rests on only part of the pool.
+
+    Empty at full coverage so the prompt is unchanged there. Otherwise the model is told how
+    thin the outcome evidence is, so "no low_task_success flag" is not narrated as a clean bill
+    of health when it may simply be missing telemetry.
+    """
+    breakdown = snapshot.transform_gate_breakdown
+    if breakdown is None or breakdown.outcome_coverage is None or breakdown.outcome_coverage >= 1.0:
+        return ""
+    line = (
+        f"\n- Outcome coverage: {breakdown.outcome_coverage * 100:.0f}% of the navigate-stuck, "
+        f"tenure-eligible pool ({breakdown.outcome_covered_users} of {breakdown.evaluated_users} users) "
+        "have any task-outcome data; the success-rate read rests only on that subset"
+    )
+    if snapshot.stall_point == "navigate" and "low_task_success" not in snapshot.flags:
+        line += (
+            ", and low_task_success was not assessed because coverage is too thin -- do not read "
+            "its absence as evidence that tasks succeed"
+        )
+    return line
+
+
 def _stage_lines(snapshot: NanteSnapshot) -> str:
     return "\n".join(
         f"  - {stage.stage}: {stage.population_fraction * 100:.1f}%"
@@ -53,6 +76,7 @@ def _build_prompt(snapshot: NanteSnapshot, role: Literal["reference", "observed"
         nante_score_display=_score_display(snapshot),
         stall_point_display=_stall_point_display(snapshot),
         flags_display=_flags_display(snapshot),
+        outcome_coverage_line=_outcome_coverage_line(snapshot),
         stage_lines=_stage_lines(snapshot),
     )
 

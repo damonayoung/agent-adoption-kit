@@ -70,12 +70,28 @@ class TransformGateBreakdown(BaseModel):
     were even tenure-eligible for a real qualitative read, and what fraction of that eligible
     pool failed each individual Transform sub-gate.
 
+    The two failing fractions have DIFFERENT denominators:
+
+    - ``multi_step_share_failing_fraction`` is over the full evaluated pool
+      (``evaluated_users``): every tenure-eligible user has sessions to measure depth on.
+    - ``success_rate_failing_fraction`` is over the outcome-covered subset only
+      (``outcome_covered_users``): the evaluated users who have at least one task_outcome
+      event. A user with no outcome events is unmeasured, not failing, and is excluded from
+      both numerator and denominator. It is ``None`` when nobody in the pool is covered.
+
+    ``outcome_coverage`` = outcome_covered_users / evaluated_users (``None`` when the pool is
+    empty) says how much of the pool the success-rate read actually rests on. A source that
+    emits no task outcomes reports coverage 0.0 and an uncomputable success fraction, rather
+    than a population that appears to be failing.
+
     Not mutually exclusive -- a user can fail both the multi-step-share gate and the
     success-rate gate at once, so the two fractions need not sum to 1.
     """
 
     evaluated_users: int = Field(ge=0)
     insufficient_weeks_users: int = Field(ge=0)
+    outcome_covered_users: int = Field(default=0, ge=0)
+    outcome_coverage: Optional[float] = Field(default=None, ge=0, le=1)
     multi_step_share_failing_fraction: Optional[float] = Field(default=None, ge=0, le=1)
     success_rate_failing_fraction: Optional[float] = Field(default=None, ge=0, le=1)
 

@@ -10,7 +10,7 @@ import typer
 
 from aak.analytics.interventions import InterventionRule, select_interventions
 from aak.analytics.staging import build_snapshot
-from aak.analytics.thresholds import load_thresholds
+from aak.analytics.thresholds import Thresholds, load_thresholds
 from aak.models import NanteSnapshot
 from aak.report import tokens
 from aak.report.figure import build_paper_figure_svg, export_figure
@@ -78,8 +78,58 @@ def simulate(
     )
 
 
-def _format_snapshot(snapshot: NanteSnapshot, interventions: list[InterventionRule]) -> str:
-    """Render a NanteSnapshot and its matched interventions as readable text."""
+def _outcome_coverage_lines(snapshot: NanteSnapshot, thresholds: Optional[Thresholds]) -> list[str]:
+    """Surface the Transform gate breakdown when its success-rate read does not rest on the whole
+    evaluated pool -- i.e. some tenure-eligible navigate-stuck users have no task-outcome data.
+
+    Silent at full coverage (every simulated pathology emits outcomes for everyone), so the
+    default `aak analyze` output is unchanged there. When coverage is partial the failing
+    fractions are shown with their own denominators, and when a cohort stalls at Navigate with
+    coverage below the PROPOSED floor, the reason no low_task_success diagnosis was issued is
+    stated outright -- the absence of a diagnosis is itself the useful output.
+    """
+    breakdown = snapshot.transform_gate_breakdown
+    if breakdown is None or breakdown.outcome_coverage is None or breakdown.outcome_coverage >= 1.0:
+        return []
+
+    evaluated = breakdown.evaluated_users
+    covered = breakdown.outcome_covered_users
+    lines = ["", f"Transform gate (navigate-stuck, tenure-eligible pool of {evaluated}):"]
+    multi_step = breakdown.multi_step_share_failing_fraction
+    lines.append(
+        f"  multi-step share failing: {multi_step * 100:5.1f}% of {evaluated}"
+        if multi_step is not None
+        else "  multi-step share failing: n/a"
+    )
+    success = breakdown.success_rate_failing_fraction
+    lines.append(
+        f"  success rate failing:     {success * 100:5.1f}% of {covered} with task outcomes"
+        if success is not None
+        else "  success rate failing:     n/a (no user in the pool has task outcomes)"
+    )
+    lines.append(f"  outcome coverage:         {breakdown.outcome_coverage * 100:5.1f}% ({covered} of {evaluated})")
+
+    if thresholds is not None:
+        floor = thresholds.stall_detection.low_task_success_min_outcome_coverage
+        if snapshot.stall_point == "navigate" and breakdown.outcome_coverage < floor:
+            lines.append(
+                f"  Stalled at navigate, but outcome coverage is below the {floor * 100:.0f}% PROPOSED floor: "
+                "low_task_success was not assessed because the success-rate read rests on too small a "
+                "share of the pool. Missing outcome telemetry, not a diagnosis."
+            )
+    return lines
+
+
+def _format_snapshot(
+    snapshot: NanteSnapshot,
+    interventions: list[InterventionRule],
+    thresholds: Optional[Thresholds] = None,
+) -> str:
+    """Render a NanteSnapshot and its matched interventions as readable text.
+
+    ``thresholds`` is only needed to name the outcome-coverage floor when a cohort's
+    low_task_success diagnosis was withheld for thin coverage; without it that line is omitted.
+    """
     lines = [f"=== {snapshot.cohort} ==="]
     lines.append(f"as_of: {snapshot.as_of}   observation_days: {snapshot.observation_days}")
     lines.append(
@@ -98,6 +148,7 @@ def _format_snapshot(snapshot: NanteSnapshot, interventions: list[InterventionRu
 
     lines.append("")
     lines.append(f"Flags: {', '.join(snapshot.flags) if snapshot.flags else 'none'}")
+    lines.extend(_outcome_coverage_lines(snapshot, thresholds))
 
     if interventions:
         lines.append("")
@@ -143,7 +194,7 @@ def analyze(
     for cohort_name in cohorts_to_analyze:
         snapshot = build_snapshot(events, roster, cohort_name, thresholds)
         interventions = select_interventions(snapshot)
-        blocks.append(_format_snapshot(snapshot, interventions))
+        blocks.append(_format_snapshot(snapshot, interventions, thresholds))
 
     typer.echo("\n\n".join(blocks))
 

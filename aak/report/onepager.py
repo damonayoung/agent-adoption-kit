@@ -39,14 +39,36 @@ def _flags_display(snapshot: NanteSnapshot) -> str:
     return ", ".join(f.replace("_", " ") for f in snapshot.flags) if snapshot.flags else "none"
 
 
+def _outcome_coverage_display(snapshot: NanteSnapshot) -> Optional[str]:
+    """How much of the navigate-stuck, tenure-eligible pool the success-rate read rests on.
+
+    ``None`` at full coverage (nothing to caveat -- and the paper figure stays byte-identical);
+    otherwise the coverage share, plus a note that low_task_success was not assessed when the
+    cohort stalled at Navigate without that flag, since thin outcome telemetry -- not a clean
+    bill of health -- is the likeliest reason.
+    """
+    breakdown = snapshot.transform_gate_breakdown
+    if breakdown is None or breakdown.outcome_coverage is None or breakdown.outcome_coverage >= 1.0:
+        return None
+    text = (
+        f"outcome coverage: {breakdown.outcome_coverage * 100:.0f}% "
+        f"({breakdown.outcome_covered_users} of {breakdown.evaluated_users} evaluated users have task outcomes)"
+    )
+    if snapshot.stall_point == "navigate" and "low_task_success" not in snapshot.flags:
+        text += " — low task success not assessed on this coverage"
+    return text
+
+
 def _verdict_card(snapshot: NanteSnapshot, label: str, modifier: str) -> str:
+    coverage = _outcome_coverage_display(snapshot)
+    coverage_line = f'<br>\n        <span class="muted">{escape(coverage)}</span>' if coverage else ""
     return f"""
     <div class="verdict-card verdict-card--{modifier}">
       <div class="verdict-label">{escape(label)}</div>
       <div class="verdict-score">{escape(_score_display(snapshot))}</div>
       <div class="verdict-meta">
         stall point: <strong>{escape(_stall_point_display(snapshot))}</strong><br>
-        flags: <span class="muted">{escape(_flags_display(snapshot))}</span>
+        flags: <span class="muted">{escape(_flags_display(snapshot))}</span>{coverage_line}
       </div>
     </div>"""
 
