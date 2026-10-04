@@ -22,7 +22,7 @@ SUBHEAD = (
     "— and one stalled at the surface."
 )
 HONESTY_LABEL = "Illustrative synthetic data · thresholds proposed, not validated"
-FOOTER_BRAND = "NANTE / PolyWise Partners"
+FOOTER_BRAND = "NANTE / Polywise Partners"
 
 
 def _score_display(snapshot: NanteSnapshot) -> str:
@@ -210,7 +210,7 @@ def render_onepager(
 ) -> str:
     """Assemble the full comparison one-pager as a self-contained HTML string.
 
-    ``theme`` selects the palette (default: locked dark PolyWise; ``tokens.PAPER`` for the light,
+    ``theme`` selects the palette (default: locked dark Polywise; ``tokens.PAPER`` for the light,
     print-suitable variant). When both commentaries are ``None`` the Claude-generated commentary
     block is omitted entirely — the paper theme calls it this way so the figure is deterministic
     and never touches the Anthropic client. With both commentaries supplied and the default theme,

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-import anthropic
 import typer
 
 from aak.analytics.interventions import InterventionRule, select_interventions
@@ -232,6 +231,16 @@ def report(
             export_figure(svg, export_figure_path)
             typer.echo(f"Exported figure -> {export_figure_path}")
         return
+
+    try:
+        import anthropic  # lazy: only the default (commentary) theme needs the SDK
+    except ImportError:
+        typer.echo(
+            "The default report theme generates cohort commentary with the Anthropic SDK, which is "
+            "not installed. Install it with `pip install -e \".[report]\"` (or `pip install anthropic`), "
+            "or pass --theme paper for the deterministic report that needs no SDK or API key."
+        )
+        raise typer.Exit(code=1)
 
     client = anthropic.Anthropic()
     reference_commentary = generate_cohort_commentary(reference, "reference", client=client)

@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from string import Template
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
-import anthropic
+if TYPE_CHECKING:  # the SDK is an optional extra; import it only when a client is built
+    import anthropic
 
 from aak.models import NanteSnapshot
 
@@ -70,6 +71,8 @@ def generate_cohort_commentary(
     """
     prompt = _build_prompt(snapshot, role)
     if client is None:
+        import anthropic  # lazy: importing this module must not require the optional SDK
+
         client = anthropic.Anthropic()
 
     response = client.messages.create(
