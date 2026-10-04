@@ -107,6 +107,8 @@ The ingestion adapters in `aak/ingest/` are unimplemented stubs. Every result th
 
 ## Reproduce the paper's results
 
+The paper's results correspond to tag `paper-v1`.
+
 Everything below is deterministic at a fixed seed (42) and needs no API key or network. From the repo root:
 
 ```bash
