@@ -112,11 +112,15 @@ def test_transform_gate_breakdown_valid_construction():
     breakdown = TransformGateBreakdown(
         evaluated_users=40,
         insufficient_weeks_users=5,
-        multi_step_share_failing_fraction=0.7,
-        success_rate_failing_fraction=0.95,
+        outcome_covered_users=20,
+        outcome_coverage=0.5,
+        multi_step_share_failing_fraction=0.7,  # over the full evaluated pool of 40
+        success_rate_failing_fraction=0.95,  # over the outcome-covered subset of 20
     )
     assert breakdown.evaluated_users == 40
     assert breakdown.insufficient_weeks_users == 5
+    assert breakdown.outcome_covered_users == 20
+    assert breakdown.outcome_coverage == pytest.approx(0.5)
     assert breakdown.multi_step_share_failing_fraction == pytest.approx(0.7)
     assert breakdown.success_rate_failing_fraction == pytest.approx(0.95)
 
@@ -125,6 +129,25 @@ def test_transform_gate_breakdown_fractions_default_to_none():
     breakdown = TransformGateBreakdown(evaluated_users=0, insufficient_weeks_users=3)
     assert breakdown.multi_step_share_failing_fraction is None
     assert breakdown.success_rate_failing_fraction is None
+
+
+def test_transform_gate_breakdown_coverage_fields_default_so_older_snapshots_still_load():
+    # Serialized before outcome coverage existed: no coverage keys at all.
+    breakdown = TransformGateBreakdown.model_validate(
+        {
+            "evaluated_users": 40,
+            "insufficient_weeks_users": 5,
+            "multi_step_share_failing_fraction": 0.7,
+            "success_rate_failing_fraction": 0.95,
+        }
+    )
+    assert breakdown.outcome_covered_users == 0
+    assert breakdown.outcome_coverage is None
+
+
+def test_transform_gate_breakdown_rejects_coverage_outside_unit_interval():
+    with pytest.raises(ValidationError):
+        TransformGateBreakdown(evaluated_users=1, insufficient_weeks_users=0, outcome_coverage=1.5)
 
 
 def test_nante_snapshot_carries_transform_gate_breakdown():

@@ -8,7 +8,7 @@ Snapshot:
 - Cohort: $cohort
 - NANTE score: $nante_score_display (0-100 scale)
 - Stall point: $stall_point_display
-- Flags: $flags_display
+- Flags: $flags_display$outcome_coverage_line
 - Stage distribution (share of the cohort currently at each stage):
 $stage_lines
 

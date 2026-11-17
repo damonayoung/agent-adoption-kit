@@ -82,6 +82,7 @@ def _test_thresholds() -> Thresholds:
             low_task_success_min_evaluated=2,
             low_task_success_success_failing_min=0.75,
             low_task_success_multi_step_failing_max=0.9,
+            low_task_success_min_outcome_coverage=0.5,
         ),
         scoring=ScoringThresholds(
             stage_weights={"notice": 0, "attempt": 25, "navigate": 50, "transform": 75, "embed": 100}
@@ -128,8 +129,8 @@ def test_classify_user_known_answer(user_id, expected_stage):
 @pytest.mark.parametrize(
     "user_id, enough_weeks, meets_multi_step, meets_success_rate",
     [
-        ("a1", False, False, False),  # 1 active week, turns=1 (not multi-step), no outcomes
-        ("v1", False, False, False),  # 2 active weeks (< transform's 4-week bar)
+        ("a1", False, False, None),  # 1 active week, turns=1 (not multi-step), no outcomes -> unmeasured
+        ("v1", False, False, None),  # 2 active weeks (< transform's 4-week bar), no outcomes -> unmeasured
         ("t1", True, True, True),  # 4 active weeks, turns=6 (multi-step), all success
         ("e1", True, True, True),  # 10 active weeks, turns=6 (multi-step), all success
     ],
@@ -171,10 +172,78 @@ def test_transform_gate_breakdown_known_answer():
 
     assert breakdown.evaluated_users == 3
     assert breakdown.insufficient_weeks_users == 1
-    # fail_success and fail_both fail the success gate: 2/3
+    # every evaluated user has task outcomes, so the success-rate denominator is the whole pool
+    assert breakdown.outcome_covered_users == 3
+    assert breakdown.outcome_coverage == pytest.approx(1.0)
+    # fail_success and fail_both fail the success gate: 2/3 of the outcome-covered subset
     assert breakdown.success_rate_failing_fraction == pytest.approx(2 / 3)
-    # fail_multistep and fail_both fail the multi-step gate: 2/3
+    # fail_multistep and fail_both fail the multi-step gate: 2/3 of the full evaluated pool
     assert breakdown.multi_step_share_failing_fraction == pytest.approx(2 / 3)
+
+
+def test_user_with_no_outcome_data_is_unmeasured_not_failing_and_stays_navigate():
+    """A user with deep, sustained activity but zero task_outcome events must not be scored as
+    if every task failed: meets_success_rate is None (unknown), and -- because depth cannot be
+    certified without outcome evidence -- they are still held at navigate, not promoted."""
+    thresholds = _test_thresholds()  # transform_min_active_weeks=4, multi_step_turns_threshold=5
+    events_by_user: dict[str, list[Event]] = defaultdict(list)
+    for week in range(10):  # 10 active weeks, 3 sessions each, 20 turns per session, no outcomes
+        for k in range(3):
+            events_by_user["deep"].append(_inv("deep", week * 7 + 2, f"deep:{week}:{k}", turns=20))
+
+    status = _transform_gate_status("deep", events_by_user, ROLLOUT, thresholds)
+    assert status.enough_weeks is True
+    assert status.meets_multi_step is True
+    assert status.meets_success_rate is None
+    assert status.meets_transform is False
+    assert _classify_user("deep", events_by_user, ROLLOUT, AS_OF, thresholds) == "navigate"
+
+
+def test_transform_gate_breakdown_success_fraction_is_over_the_outcome_covered_subset_only():
+    """Mixed coverage: of 4 tenure-eligible users, 2 have outcomes (1 failing, 1 succeeding) and 2
+    have none. The success-rate fraction must be 1/2 (over the covered pair), not 3/4 (which is
+    what counting the unmeasured users as failures would give) -- while the multi-step fraction
+    stays over the full evaluated pool of 4."""
+    thresholds = _test_thresholds()
+    events_by_user: dict[str, list[Event]] = defaultdict(list)
+    for d in (2, 9, 16, 23):  # 4 distinct active weeks -> enough_weeks True for everyone
+        # covered, fails success (multi-step ok)
+        events_by_user["cov_fail"].append(_inv("cov_fail", d, f"cf:{d}", turns=6))
+        events_by_user["cov_fail"].append(_outc("cov_fail", d, f"cf:{d}", "abandoned", turns=6))
+        # covered, passes success but fails multi-step
+        events_by_user["cov_pass"].append(_inv("cov_pass", d, f"cp:{d}", turns=1))
+        events_by_user["cov_pass"].append(_outc("cov_pass", d, f"cp:{d}", "success", turns=1))
+        # uncovered: multi-step ok, no outcomes at all
+        events_by_user["uncov_deep"].append(_inv("uncov_deep", d, f"ud:{d}", turns=6))
+        # uncovered: shallow, no outcomes at all
+        events_by_user["uncov_shallow"].append(_inv("uncov_shallow", d, f"us:{d}", turns=1))
+
+    navigate_user_ids = ["cov_fail", "cov_pass", "uncov_deep", "uncov_shallow"]
+    breakdown = _transform_gate_breakdown(navigate_user_ids, events_by_user, ROLLOUT, thresholds)
+
+    assert breakdown.evaluated_users == 4
+    assert breakdown.insufficient_weeks_users == 0
+    assert breakdown.outcome_covered_users == 2
+    assert breakdown.outcome_coverage == pytest.approx(0.5)
+    # 1 of the 2 covered users fails the success gate; the 2 uncovered users are not counted
+    assert breakdown.success_rate_failing_fraction == pytest.approx(1 / 2)
+    # cov_pass and uncov_shallow fail multi-step: 2 of the full evaluated pool of 4
+    assert breakdown.multi_step_share_failing_fraction == pytest.approx(2 / 4)
+
+
+def test_transform_gate_breakdown_with_no_outcome_data_reports_zero_coverage_not_failure():
+    thresholds = _test_thresholds()
+    events_by_user: dict[str, list[Event]] = defaultdict(list)
+    for d in (2, 9, 16, 23):
+        events_by_user["u"].append(_inv("u", d, f"u:{d}", turns=6))
+
+    breakdown = _transform_gate_breakdown(["u"], events_by_user, ROLLOUT, thresholds)
+
+    assert breakdown.evaluated_users == 1
+    assert breakdown.outcome_covered_users == 0
+    assert breakdown.outcome_coverage == pytest.approx(0.0)
+    assert breakdown.success_rate_failing_fraction is None
+    assert breakdown.multi_step_share_failing_fraction == pytest.approx(0.0)
 
 
 def test_build_snapshot_stage_distribution_and_stall_point():
@@ -240,6 +309,7 @@ def test_post_navigate_at_risk_boundary_does_not_become_the_stall_point():
             low_task_success_min_evaluated=2,
             low_task_success_success_failing_min=0.75,
             low_task_success_multi_step_failing_max=0.9,
+            low_task_success_min_outcome_coverage=0.5,
         ),
         scoring=ScoringThresholds(
             stage_weights={"notice": 0, "attempt": 25, "navigate": 50, "transform": 75, "embed": 100}
@@ -349,6 +419,8 @@ def test_low_task_success_flag_fires_when_success_dominates_the_navigate_stall()
     assert snapshot.stall_point == "navigate"
     assert "low_task_success" in snapshot.flags
     assert snapshot.transform_gate_breakdown.evaluated_users == 10
+    assert snapshot.transform_gate_breakdown.outcome_covered_users == 10
+    assert snapshot.transform_gate_breakdown.outcome_coverage == pytest.approx(1.0)
     assert snapshot.transform_gate_breakdown.success_rate_failing_fraction == pytest.approx(1.0)
     assert snapshot.transform_gate_breakdown.multi_step_share_failing_fraction == pytest.approx(0.0)
 
@@ -361,5 +433,68 @@ def test_low_task_success_flag_does_not_fire_when_multi_step_dominates_the_navig
 
     assert snapshot.stall_point == "navigate"
     assert "low_task_success" not in snapshot.flags
+    assert snapshot.transform_gate_breakdown.outcome_coverage == pytest.approx(1.0)
     assert snapshot.transform_gate_breakdown.success_rate_failing_fraction == pytest.approx(0.0)
     assert snapshot.transform_gate_breakdown.multi_step_share_failing_fraction == pytest.approx(1.0)
+
+
+def _navigate_stuck_population_with_partial_outcomes(
+    n_users: int, n_covered: int
+) -> tuple[list[ProvisionedUser], list[Event]]:
+    """``n_users`` users, all navigate-stuck with multi-step depth (turns=6, 4 active weeks). The
+    first ``n_covered`` emit task outcomes -- every one abandoned, i.e. failing the success gate
+    -- and the rest emit no task_outcome events at all (unmeasured, not failing)."""
+    roster = [_user(f"u{i}") for i in range(n_users)]
+    events: list[Event] = []
+    for i in range(n_users):
+        for d in (2, 9, 16, 23):
+            events.append(_inv(f"u{i}", d, f"u{i}:{d}", turns=6))
+            if i < n_covered:
+                events.append(_outc(f"u{i}", d, f"u{i}:{d}", "abandoned", turns=6))
+    return roster, events
+
+
+def test_low_task_success_flag_does_not_fire_when_no_user_has_outcome_data():
+    """A source that emits no task outcomes at all: the cohort still stalls at navigate (depth
+    cannot be certified without outcome evidence), but low_task_success must NOT fire -- there is
+    no success-rate evidence to diagnose from, only its absence."""
+    thresholds = _test_thresholds()
+    roster, events = _navigate_stuck_population_with_partial_outcomes(n_users=10, n_covered=0)
+
+    snapshot = build_snapshot(events, roster, "c1", thresholds, as_of=AS_OF)
+
+    assert snapshot.stall_point == "navigate"
+    assert "low_task_success" not in snapshot.flags
+    assert snapshot.transform_gate_breakdown.evaluated_users == 10
+    assert snapshot.transform_gate_breakdown.outcome_covered_users == 0
+    assert snapshot.transform_gate_breakdown.outcome_coverage == pytest.approx(0.0)
+    assert snapshot.transform_gate_breakdown.success_rate_failing_fraction is None
+    # the depth read itself is intact: nobody fails multi-step, so the stall is not shallowness
+    assert snapshot.transform_gate_breakdown.multi_step_share_failing_fraction == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize(
+    "n_covered, expect_flag",
+    [
+        (9, False),  # 9/20 = 0.45, just below low_task_success_min_outcome_coverage=0.5
+        (10, True),  # 10/20 = 0.50, at the floor (inclusive)
+        (11, True),  # 11/20 = 0.55, just above
+    ],
+)
+def test_low_task_success_flag_respects_the_outcome_coverage_floor(n_covered, expect_flag):
+    """Otherwise-identical navigate-stalled cohorts, differing only in how many of the 20
+    evaluated users have outcome data. Every covered user fails the success gate (fraction 1.0,
+    well above the 0.75 bar) and the covered count clears low_task_success_min_evaluated=2 in
+    every case -- so the coverage floor is the only thing deciding whether the flag fires."""
+    thresholds = _test_thresholds()
+    roster, events = _navigate_stuck_population_with_partial_outcomes(n_users=20, n_covered=n_covered)
+
+    snapshot = build_snapshot(events, roster, "c1", thresholds, as_of=AS_OF)
+
+    assert snapshot.stall_point == "navigate"
+    breakdown = snapshot.transform_gate_breakdown
+    assert breakdown.evaluated_users == 20
+    assert breakdown.outcome_covered_users == n_covered
+    assert breakdown.outcome_coverage == pytest.approx(n_covered / 20)
+    assert breakdown.success_rate_failing_fraction == pytest.approx(1.0)
+    assert ("low_task_success" in snapshot.flags) is expect_flag

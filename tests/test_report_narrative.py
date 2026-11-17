@@ -1,7 +1,7 @@
 from datetime import date
 from types import SimpleNamespace
 
-from aak.models import NanteSnapshot, StageRead
+from aak.models import NanteSnapshot, StageRead, TransformGateBreakdown
 from aak.report.narrative import generate_cohort_commentary
 
 _STAGE_DISTRIBUTION = [
@@ -69,3 +69,32 @@ def test_role_label_distinguishes_reference_from_observed_in_the_prompt():
 
     prompt = client.messages.last_kwargs["messages"][0]["content"]
     assert "Reference (healthy)" in prompt
+
+
+def test_prompt_omits_outcome_coverage_when_it_is_complete():
+    snapshot = _snapshot()
+    snapshot.transform_gate_breakdown = TransformGateBreakdown(
+        evaluated_users=100, insufficient_weeks_users=0, outcome_covered_users=100, outcome_coverage=1.0,
+        multi_step_share_failing_fraction=0.99, success_rate_failing_fraction=0.2,
+    )
+    client = _FakeClient()
+    generate_cohort_commentary(snapshot, "observed", client=client)
+    prompt = client.messages.last_kwargs["messages"][0]["content"]
+    assert "Outcome coverage" not in prompt
+
+
+def test_prompt_tells_the_model_when_outcome_coverage_is_thin():
+    """The model must not narrate a missing low_task_success flag as proof that tasks succeed
+    when the success-rate read rests on a sliver of the pool."""
+    snapshot = _snapshot()
+    snapshot.transform_gate_breakdown = TransformGateBreakdown(
+        evaluated_users=100, insufficient_weeks_users=0, outcome_covered_users=10, outcome_coverage=0.1,
+        multi_step_share_failing_fraction=0.99, success_rate_failing_fraction=0.2,
+    )
+    client = _FakeClient()
+    generate_cohort_commentary(snapshot, "observed", client=client)
+    prompt = client.messages.last_kwargs["messages"][0]["content"]
+    assert "Outcome coverage: 10%" in prompt
+    assert "10 of 100 users" in prompt
+    assert "low_task_success was not assessed" in prompt
+

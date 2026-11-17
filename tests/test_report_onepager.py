@@ -1,6 +1,6 @@
 from datetime import date
 
-from aak.models import NanteSnapshot, StageRead
+from aak.models import NanteSnapshot, StageRead, TransformGateBreakdown
 from aak.report.onepager import HONESTY_LABEL, render_onepager
 
 
@@ -91,3 +91,28 @@ def test_onepager_handles_insufficient_window_score_without_fabricating_a_number
     reference = _reference().model_copy(update={"nante_score": None, "insufficient_window": True})
     html = render_onepager(reference, _observed(), "ref text", "obs text")
     assert "n/a (insufficient window)" in html
+
+
+def _observed_with_breakdown(covered: int, evaluated: int) -> NanteSnapshot:
+    observed = _observed()
+    observed.transform_gate_breakdown = TransformGateBreakdown(
+        evaluated_users=evaluated,
+        insufficient_weeks_users=0,
+        outcome_covered_users=covered,
+        outcome_coverage=covered / evaluated,
+        multi_step_share_failing_fraction=0.99,
+        success_rate_failing_fraction=(0.2 if covered else None),
+    )
+    return observed
+
+
+def test_onepager_is_silent_about_outcome_coverage_when_it_is_complete():
+    html = render_onepager(_reference(), _observed_with_breakdown(covered=300, evaluated=300), "R.", "O.")
+    assert "outcome coverage" not in html
+
+
+def test_onepager_shows_partial_outcome_coverage_and_the_withheld_diagnosis():
+    html = render_onepager(_reference(), _observed_with_breakdown(covered=60, evaluated=300), "R.", "O.")
+    assert "outcome coverage: 20% (60 of 300 evaluated users have task outcomes)" in html
+    assert "low task success not assessed on this coverage" in html
+
