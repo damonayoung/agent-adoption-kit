@@ -1,6 +1,6 @@
 """Design tokens for the NANTE comparison one-pager.
 
-The palette and typefaces are the locked PolyWise brand (see the report brief) — this module is
+The palette and typefaces are the locked Polywise brand (see the report brief) — this module is
 the single source for both charts.py's SVG and onepager.py's CSS, so the two can't drift.
 
 Fonts are embedded as base64 data URIs rather than loaded from a CDN: the report is meant to be
@@ -37,7 +37,7 @@ WALL = "#F0A93A"
 
 # --- Themes -----------------------------------------------------------------
 # A Theme is the full set of color roles charts.py and onepager.py draw with. The values above
-# are the locked PolyWise dark brand; PAPER is a light, print-suitable second set with the SAME
+# are the locked Polywise dark brand; PAPER is a light, print-suitable second set with the SAME
 # semantic roles (teal=healthy, crimson=stalled, amber=the wall) at darker values chosen for
 # contrast on white. Colors live here, in one place, so neither charts.py nor onepager.py ever
 # branches on theme inline -- they read `theme.<role>` and are otherwise theme-agnostic.

@@ -95,7 +95,7 @@ def test_paper_theme_omits_commentary_entirely():
 
 
 def test_paper_theme_renders_without_constructing_an_api_client(monkeypatch):
-    import anthropic
+    anthropic = pytest.importorskip("anthropic")
 
     def _boom(*a, **k):
         raise AssertionError("paper theme must never construct an Anthropic client")

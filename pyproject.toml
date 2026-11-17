@@ -9,17 +9,19 @@ description = "Adoption telemetry for enterprise AI agents"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2",
-    "sqlalchemy",
-    "typer",
-    "plotly",
-    "kaleido",
-    "anthropic",
-    "pyyaml",
-    "cairosvg",
+    "sqlalchemy>=2.0.52",
+    "typer>=0.27.2",
+    "plotly>=7.0.0",
+    "kaleido>=1.4.0",
+    "pyyaml>=6.0.3",
+    "cairosvg>=2.9.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+# The Anthropic SDK is needed only by `aak report` in its default theme; the deterministic
+# `--theme paper` path, `simulate`, and `analyze` never import it.
+report = ["anthropic>=1.4.0"]
+dev = ["pytest", "anthropic>=1.4.0"]
 
 [project.scripts]
 aak = "aak.cli:app"

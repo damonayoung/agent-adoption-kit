@@ -1,1 +1,1 @@
-"""Ingestion adapter for GitHub Copilot adoption data."""
+"""Ingestion adapter for Microsoft 365 Copilot adoption data. Unimplemented stub."""

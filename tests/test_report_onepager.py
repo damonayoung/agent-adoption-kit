@@ -78,7 +78,7 @@ def test_onepager_carries_the_honesty_label():
 def test_onepager_carries_the_locked_headline_and_footer_brand():
     html = _render()
     assert "The same usage data. Opposite adoption." in html
-    assert "NANTE / PolyWise Partners" in html
+    assert "NANTE / Polywise Partners" in html
 
 
 def test_onepager_embeds_both_commentaries():

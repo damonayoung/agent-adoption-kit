@@ -1,7 +1,8 @@
 from datetime import date
 from types import SimpleNamespace
 
-import anthropic
+import pytest
+
 from typer.testing import CliRunner
 
 from aak.analytics.thresholds import load_thresholds
@@ -252,6 +253,7 @@ def test_format_snapshot_omits_the_floor_note_when_coverage_clears_it():
 
 
 def test_report_compare_writes_an_html_one_pager(tmp_path, monkeypatch):
+    anthropic = pytest.importorskip("anthropic")
     monkeypatch.setattr(anthropic, "Anthropic", _FakeAnthropicClient)
 
     ref_db = tmp_path / "ref.db"
@@ -273,6 +275,7 @@ def test_report_compare_writes_an_html_one_pager(tmp_path, monkeypatch):
 
 
 def test_report_without_compare_flag_errors_instead_of_guessing_a_mode(tmp_path, monkeypatch):
+    anthropic = pytest.importorskip("anthropic")
     monkeypatch.setattr(anthropic, "Anthropic", _FakeAnthropicClient)
 
     ref_db = tmp_path / "ref.db"
