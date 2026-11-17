@@ -1,1 +1,1 @@
-"""Ingestion adapter for Salesforce Agentforce adoption data."""
+"""Ingestion adapter for Salesforce Agentforce adoption data. Unimplemented stub."""

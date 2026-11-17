@@ -1,1 +1,1 @@
-"""Generic/CSV ingestion adapter for adoption data of unspecified origin."""
+"""Generic/CSV ingestion adapter for adoption data of unspecified origin. Unimplemented stub."""
